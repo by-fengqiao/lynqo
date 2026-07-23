@@ -9,6 +9,7 @@ import { isTauri, openReceiveFolder, quitApplication } from "./services/tauri";
 import { useLegalConsent } from "./composables/useLegalConsent";
 import ToastHost from "./components/overlays/ToastHost.vue";
 import LegalConsentDialog from "./components/legal/LegalConsentDialog.vue";
+import FirstLaunchGuide from "./components/onboarding/FirstLaunchGuide.vue";
 import { useLocale } from "./i18n";
 
 const settingsStore = useSettingsStore();
@@ -84,6 +85,7 @@ onUnmounted(() => {
     @decline="declineLegalConsent"
     @reconsider="reconsiderLegalConsent"
   />
+  <FirstLaunchGuide v-if="isDesktopApp && legalConsentStatus === 'accepted'" />
 </template>
 
 <style scoped>
