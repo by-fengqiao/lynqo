@@ -374,8 +374,14 @@ pub async fn forget_device(
 ) -> Result<CommandResult, String> {
     let s = state.lock().await;
     match s.db.hide_device(&device_id) {
-        Ok(()) => Ok(CommandResult { success: true, error: None }),
-        Err(e) => Ok(CommandResult { success: false, error: Some(e.to_string()) }),
+        Ok(()) => Ok(CommandResult {
+            success: true,
+            error: None,
+        }),
+        Err(e) => Ok(CommandResult {
+            success: false,
+            error: Some(e.to_string()),
+        }),
     }
 }
 

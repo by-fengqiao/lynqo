@@ -557,8 +557,11 @@ impl Database {
                 .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
             let mut stmt = conn
                 .prepare("SELECT device_id FROM hidden_devices")
-                .map_err(|e| AppError::Database(format!("Prepare hidden devices query failed: {}", e)))?;
-            let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| {
+                    AppError::Database(format!("Prepare hidden devices query failed: {}", e))
+                })?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
                 .map_err(|e| AppError::Database(format!("Query hidden devices failed: {}", e)))?
                 .collect::<Result<std::collections::HashSet<_>, _>>()
                 .map_err(|e| AppError::Database(format!("Collect hidden devices failed: {}", e)))?;
@@ -616,8 +619,11 @@ impl Database {
             .conn
             .lock()
             .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
-        conn.execute("DELETE FROM hidden_devices WHERE device_id = ?1", params![device_id])
-            .map_err(|e| AppError::Database(format!("Unhide device failed: {}", e)))?;
+        conn.execute(
+            "DELETE FROM hidden_devices WHERE device_id = ?1",
+            params![device_id],
+        )
+        .map_err(|e| AppError::Database(format!("Unhide device failed: {}", e)))?;
         Ok(())
     }
 
