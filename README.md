@@ -5,6 +5,10 @@
 <h1 align="center">LYNQO</h1>
 
 <p align="center">
+  <strong>简体中文</strong> · <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <strong>连接附近，自由传输。</strong><br />
   一个面向可信局域网的开源跨设备文件传输工具。
 </p>
@@ -134,7 +138,7 @@ src-tauri/icons/     桌面与移动端图标资源
 3. 提交前运行上面的验证命令。
 4. 创建 Pull Request，清晰说明问题、改动和验证结果。
 
-更完整的提交规范请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+更完整的提交规范请阅读 [贡献指南（简体中文）](CONTRIBUTING.md) 或 [Contribution Guide (English)](CONTRIBUTING.en.md)。
 
 ## 👤 作者与了解更多
 
