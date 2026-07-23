@@ -16,6 +16,7 @@ const emit = defineEmits<{
   allowOnce: [];
   trust: [];
   reject: [];
+  forget: [];
 }>();
 const { t } = useLocale();
 </script>
@@ -30,6 +31,9 @@ const { t } = useLocale();
       </span>
       <button class="revoke-button" type="button" :disabled="pending" @click="emit('reject')">
         <ShieldOff :size="14" /> {{ trusted ? t("devices.revokeTrust") : t("devices.endSession") }}
+      </button>
+      <button class="reject-button" type="button" :disabled="pending" @click="emit('forget')">
+        <X :size="14" /> {{ t("devices.forget") }}
       </button>
     </template>
     <template v-else>

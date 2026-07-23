@@ -368,6 +368,18 @@ pub async fn reject_device(
 }
 
 #[tauri::command]
+pub async fn forget_device(
+    state: State<'_, SharedState>,
+    device_id: String,
+) -> Result<CommandResult, String> {
+    let s = state.lock().await;
+    match s.db.hide_device(&device_id) {
+        Ok(()) => Ok(CommandResult { success: true, error: None }),
+        Err(e) => Ok(CommandResult { success: false, error: Some(e.to_string()) }),
+    }
+}
+
+#[tauri::command]
 pub async fn get_transfers(state: State<'_, SharedState>) -> Result<String, String> {
     let s = state.lock().await;
     let transfers = s.db.list_transfers().map_err(|e| e.to_string())?;

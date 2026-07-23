@@ -1,7 +1,17 @@
 import { defineStore } from "pinia";
 import { ref, computed, shallowRef } from "vue";
 import type { ThemeMode } from "../types";
-import { isTauri, getSettings, updateSettings, openReceiveFolder } from "@/services/tauri";
+import {
+  isTauri,
+  getSettings,
+  updateSettings,
+  openReceiveFolder,
+  getAutostartEnabled,
+  setAutostart as setAutostartNative,
+  getCloseBehavior,
+  setCloseBehavior as setCloseBehaviorNative,
+  type CloseBehavior,
+} from "@/services/tauri";
 
 // The Tauri backend is the source of truth after fetchSettings() resolves.
 let persistedThemeMode: ThemeMode = "system";
@@ -13,6 +23,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const requireApproval = ref<boolean>(true);
   // Zero means no client-side limit until the persisted backend setting is loaded.
   const maxFileSize = ref<number>(0);
+  const autostartEnabled = ref(false);
+  const closeBehavior = ref<CloseBehavior>("minimize");
 
   let mediaQuery: MediaQueryList | null = null;
   let mediaListener: ((e: MediaQueryListEvent) => void) | null = null;
@@ -98,6 +110,24 @@ export const useSettingsStore = defineStore("settings", () => {
     void saveSettings();
   }
 
+  async function setAutostart(value: boolean) {
+    if (!isTauri()) {
+      autostartEnabled.value = value;
+      return;
+    }
+    const result = await setAutostartNative(value);
+    if (result.success) autostartEnabled.value = value;
+  }
+
+  async function setCloseBehavior(value: CloseBehavior) {
+    if (!isTauri()) {
+      closeBehavior.value = value;
+      return;
+    }
+    const result = await setCloseBehaviorNative(value);
+    if (result.success) closeBehavior.value = value;
+  }
+
   /**
    * Fetch settings from the Tauri backend.
    * In browser mode, keeps neutral in-memory values because it has no local
@@ -120,6 +150,12 @@ export const useSettingsStore = defineStore("settings", () => {
           themeMode.value = settings.themeMode as ThemeMode;
           persistedThemeMode = settings.themeMode as ThemeMode;
           applyTheme();
+        }
+        try {
+          autostartEnabled.value = await getAutostartEnabled();
+          closeBehavior.value = await getCloseBehavior();
+        } catch (err) {
+          console.error("[settings] Failed to fetch lifecycle settings:", err);
         }
       } catch (err) {
         console.error("[settings] Failed to fetch settings:", err);
@@ -167,6 +203,8 @@ export const useSettingsStore = defineStore("settings", () => {
     receiveFolder,
     requireApproval,
     maxFileSize,
+    autostartEnabled,
+    closeBehavior,
     // Theme actions (unchanged)
     resolvedTheme,
     getResolvedTheme,
@@ -177,6 +215,8 @@ export const useSettingsStore = defineStore("settings", () => {
     setReceiveFolder,
     setRequireApproval,
     setMaxFileSize,
+    setAutostart,
+    setCloseBehavior,
     // Tauri-backed actions
     fetchSettings,
     saveSettings,

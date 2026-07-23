@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref, computed } from "vue";
 import type { Device } from "../types";
-import { isTauri, getDevices, approveDevice as tauriApproveDevice, rejectDevice as tauriRejectDevice } from "@/services/tauri";
+import { isTauri, getDevices, approveDevice as tauriApproveDevice, rejectDevice as tauriRejectDevice, forgetDevice as tauriForgetDevice } from "@/services/tauri";
 import { wsClient } from "@/services/websocket";
 
 export const useDevicesStore = defineStore("devices", () => {
@@ -177,6 +177,19 @@ export const useDevicesStore = defineStore("devices", () => {
     return true;
   }
 
+  async function forgetDevice(id: string): Promise<boolean> {
+    if (!isTauri()) return false;
+    try {
+      const result = await tauriForgetDevice(id);
+      if (!result.success) return false;
+      removeDevice(id);
+      return true;
+    } catch (err) {
+      console.error("[devices] Failed to forget device:", err);
+      return false;
+    }
+  }
+
   function selectDevice(id: string | null) {
     selectedDeviceId.value = id;
   }
@@ -295,6 +308,7 @@ export const useDevicesStore = defineStore("devices", () => {
     fetchDevices,
     approveDevice,
     rejectDevice,
+    forgetDevice,
     selectDevice,
     removeDevice,
     setDevices,

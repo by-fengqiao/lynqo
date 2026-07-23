@@ -52,18 +52,22 @@ pub async fn set_autostart(app: tauri::AppHandle, enabled: bool) -> Result<Comma
 /// Returns one of: "minimize", "quit", "ask"
 #[tauri::command]
 pub async fn get_close_behavior(app: tauri::AppHandle) -> Result<String, String> {
-    // Store close behavior preference in a simple config file
+    let _ = app;
+    Ok(read_close_behavior())
+}
+
+pub fn read_close_behavior() -> String {
     let config_path = get_config_path();
     if let Ok(content) = std::fs::read_to_string(&config_path) {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
             if let Some(behavior) = json.get("close_behavior").and_then(|v| v.as_str()) {
-                return Ok(behavior.to_string());
+                if ["minimize", "quit", "ask"].contains(&behavior) {
+                    return behavior.to_string();
+                }
             }
         }
     }
-    // Default behavior: minimize to tray
-    let _ = app;
-    Ok("minimize".to_string())
+    "minimize".to_string()
 }
 
 /// Set the close behavior: "minimize" (hide to tray), "quit" (exit app), or "ask" (prompt user).
@@ -105,6 +109,12 @@ pub async fn set_close_behavior(behavior: String) -> Result<CommandResult, Strin
             error: Some(format!("Failed to save close behavior: {}", e)),
         }),
     }
+}
+
+#[tauri::command]
+pub async fn quit_application(app: tauri::AppHandle) -> Result<(), String> {
+    app.exit(0);
+    Ok(())
 }
 
 /// Get application version information.

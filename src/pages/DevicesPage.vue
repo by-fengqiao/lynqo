@@ -46,6 +46,14 @@ async function reject(deviceId: string) {
   await devicesStore.fetchDevices();
 }
 
+async function forget(deviceId: string) {
+  pendingDeviceId.value = deviceId;
+  actionError.value = null;
+  const succeeded = await devicesStore.forgetDevice(deviceId);
+  pendingDeviceId.value = null;
+  if (!succeeded) actionError.value = t("devices.actionFailed");
+}
+
 function getDeviceIcon(device: Device) {
   switch (device.deviceType) {
     case "phone":
@@ -138,6 +146,7 @@ function getPlatformLabel(platform: string): string {
           @allow-once="approve(device.id, false)"
           @trust="approve(device.id, true)"
           @reject="reject(device.id)"
+          @forget="forget(device.id)"
         />
       </div>
     </div>

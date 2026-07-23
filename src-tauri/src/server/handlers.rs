@@ -443,6 +443,7 @@ pub async fn register_device(
                     &body.user_agent,
                     &peer_ip,
                 )?;
+                let _ = s.db.unhide_device(&device.id);
             }
 
             // Trust is a durable, explicit choice. A trusted device recovers

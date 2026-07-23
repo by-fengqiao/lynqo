@@ -101,6 +101,10 @@ export async function rejectDevice(deviceId: string): Promise<CommandResult> {
   return invoke("reject_device", { deviceId });
 }
 
+export async function forgetDevice(deviceId: string): Promise<CommandResult> {
+  return invoke("forget_device", { deviceId });
+}
+
 export async function getTransfers(): Promise<unknown[]> {
   const json = await invoke<string>("get_transfers");
   return JSON.parse(json);
@@ -141,6 +145,28 @@ export async function updateSettings(settings: Record<string, unknown>): Promise
 
 export async function openReceiveFolder(): Promise<CommandResult> {
   return invoke("open_receive_folder");
+}
+
+export type CloseBehavior = "minimize" | "quit" | "ask";
+
+export async function getAutostartEnabled(): Promise<boolean> {
+  return invoke("get_autostart_enabled");
+}
+
+export async function setAutostart(enabled: boolean): Promise<CommandResult> {
+  return invoke("set_autostart", { enabled });
+}
+
+export async function getCloseBehavior(): Promise<CloseBehavior> {
+  return invoke("get_close_behavior");
+}
+
+export async function setCloseBehavior(behavior: CloseBehavior): Promise<CommandResult> {
+  return invoke("set_close_behavior", { behavior });
+}
+
+export async function quitApplication(): Promise<void> {
+  return invoke("quit_application");
 }
 
 // Metadata for a user-picked file (path + display info)

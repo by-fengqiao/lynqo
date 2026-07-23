@@ -120,9 +120,24 @@ export function useMobileTransfers({ sessionToken, isApproved }: MobileTransfers
     loading.value = true;
     try {
       const response = await getMyTransfers(token);
-      transfers.value = Array.isArray(response.transfers)
+      const incoming = Array.isArray(response.transfers)
         ? response.transfers as TransferTask[]
         : [];
+      const liveById = new Map(transfers.value.map((transfer) => [transfer.id, transfer]));
+      transfers.value = incoming.map((snapshot) => {
+        const live = liveById.get(snapshot.id);
+        if (!live || ["completed", "cancelled", "failed", "rejected", "expired"].includes(snapshot.status)) {
+          return snapshot;
+        }
+        return {
+          ...snapshot,
+          progress: Math.max(snapshot.progress, live.progress),
+          transferredBytes: Math.max(snapshot.transferredBytes, live.transferredBytes),
+          speedBytesPerSecond: live.speedBytesPerSecond || snapshot.speedBytesPerSecond,
+          remainingSeconds: live.remainingSeconds ?? snapshot.remainingSeconds,
+          status: live.status === "paused" ? "paused" : snapshot.status,
+        };
+      });
       error.value = null;
     } catch (reason) {
       error.value = reason instanceof Error ? reason.message : "无法加载传输状态。";

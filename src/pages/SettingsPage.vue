@@ -7,6 +7,7 @@ import { pickDirectory } from "@/services/tauri";
 import type { ThemeMode } from "@/types";
 import LanguageSelector from "@/components/settings/LanguageSelector.vue";
 import { useLocale, type Locale } from "@/i18n";
+import type { CloseBehavior } from "@/services/tauri";
 
 const settingsStore = useSettingsStore();
 const appStore = useAppStore();
@@ -30,6 +31,16 @@ function toggleApproval() {
   settingsStore.setRequireApproval(!settingsStore.requireApproval);
 }
 
+const closeOptions = computed<{ value: CloseBehavior; label: string }[]>(() => [
+  { value: "minimize", label: t("settings.closeMinimize") },
+  { value: "quit", label: t("settings.closeQuit") },
+  { value: "ask", label: t("settings.closeAsk") },
+]);
+
+function toggleAutostart() {
+  void settingsStore.setAutostart(!settingsStore.autostartEnabled);
+}
+
 async function changeFolder() {
   const directory = await pickDirectory();
   if (directory) {
@@ -46,6 +57,43 @@ async function changeFolder() {
 
     <div class="settings-card">
       <LanguageSelector :model-value="locale" @update-model-value="selectLocale" />
+
+      <hr class="settings-divider" />
+
+      <section class="settings-section">
+        <div class="section-header">
+          <MonitorSmartphone :size="16" class="section-icon" />
+          <h2 class="section-title">{{ t("settings.lifecycle") }}</h2>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">{{ t("settings.autostart") }}</span>
+            <span class="toggle-desc">{{ t("settings.autostartDescription") }}</span>
+          </div>
+          <button
+            class="toggle-switch"
+            :class="{ 'toggle-switch--on': settingsStore.autostartEnabled }"
+            role="switch"
+            :aria-checked="settingsStore.autostartEnabled"
+            @click="toggleAutostart"
+          >
+            <span class="toggle-knob"></span>
+          </button>
+        </div>
+        <div class="close-behavior-row">
+          <span class="toggle-label">{{ t("settings.closeBehavior") }}</span>
+          <label v-for="option in closeOptions" :key="option.value" class="close-option">
+            <input
+              type="radio"
+              name="close-behavior"
+              :value="option.value"
+              :checked="settingsStore.closeBehavior === option.value"
+              @change="settingsStore.setCloseBehavior(option.value)"
+            />
+            <span>{{ option.label }}</span>
+          </label>
+        </div>
+      </section>
 
       <hr class="settings-divider" />
 
@@ -371,6 +419,23 @@ async function changeFolder() {
 
 .toggle-switch--on .toggle-knob {
   transform: translateX(20px);
+}
+
+.close-behavior-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin-top: 18px;
+}
+
+.close-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  cursor: pointer;
 }
 
 .legal-description {

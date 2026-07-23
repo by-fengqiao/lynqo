@@ -5,7 +5,7 @@ import { listen } from "@tauri-apps/api/event";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { useSettingsStore } from "./stores/settings";
 import { useAppStore } from "./stores/app";
-import { isTauri, openReceiveFolder } from "./services/tauri";
+import { isTauri, openReceiveFolder, quitApplication } from "./services/tauri";
 import { useLegalConsent } from "./composables/useLegalConsent";
 import ToastHost from "./components/overlays/ToastHost.vue";
 import LegalConsentDialog from "./components/legal/LegalConsentDialog.vue";
@@ -50,6 +50,10 @@ onMounted(async () => {
           if (path) {
             void router.push(path);
           }
+        }),
+        listen("close-requested", () => {
+          const shouldQuit = window.confirm(t("settings.closeConfirm"));
+          if (shouldQuit) void quitApplication();
         }),
       ]);
     } catch (err) {

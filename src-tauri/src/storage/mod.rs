@@ -284,6 +284,11 @@ impl Database {
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS hidden_devices (
+                device_id TEXT PRIMARY KEY,
+                hidden_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS download_sessions (
                 id TEXT PRIMARY KEY,
                 transfer_id TEXT NOT NULL,
@@ -545,8 +550,25 @@ impl Database {
     /// Return a display-safe list with stale records from the same browser
     /// collapsed. The underlying records are preserved for transfer history.
     pub fn list_visible_devices(&self) -> AppResult<Vec<DeviceRecord>> {
+        let hidden_ids = {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+            let mut stmt = conn
+                .prepare("SELECT device_id FROM hidden_devices")
+                .map_err(|e| AppError::Database(format!("Prepare hidden devices query failed: {}", e)))?;
+            let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| AppError::Database(format!("Query hidden devices failed: {}", e)))?
+                .collect::<Result<std::collections::HashSet<_>, _>>()
+                .map_err(|e| AppError::Database(format!("Collect hidden devices failed: {}", e)))?;
+            rows
+        };
         let mut visible: HashMap<String, DeviceRecord> = HashMap::new();
         for device in self.list_devices()? {
+            if hidden_ids.contains(&device.id) {
+                continue;
+            }
             // Keep a newly claimed client record and its old pre-identity
             // siblings in the same display group until the stale rows age
             // out. The database identity remains client_id; this is only a
@@ -571,6 +593,32 @@ impl Database {
         let mut devices: Vec<_> = visible.into_values().collect();
         devices.sort_by(|left, right| right.last_seen.cmp(&left.last_seen));
         Ok(devices)
+    }
+
+    pub fn hide_device(&self, device_id: &str) -> AppResult<()> {
+        if device_id == "desktop" {
+            return Err(AppError::DeviceNotFound);
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+        conn.execute(
+            "INSERT OR REPLACE INTO hidden_devices (device_id, hidden_at) VALUES (?1, ?2)",
+            params![device_id, chrono_now()],
+        )
+        .map_err(|e| AppError::Database(format!("Hide device failed: {}", e)))?;
+        Ok(())
+    }
+
+    pub fn unhide_device(&self, device_id: &str) -> AppResult<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+        conn.execute("DELETE FROM hidden_devices WHERE device_id = ?1", params![device_id])
+            .map_err(|e| AppError::Database(format!("Unhide device failed: {}", e)))?;
+        Ok(())
     }
 
     pub fn set_device_access(&self, id: &str, approved: bool, trusted: bool) -> AppResult<()> {

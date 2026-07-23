@@ -82,6 +82,9 @@ pub fn run() {
             )?;
 
             let _tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().cloned().ok_or_else(|| {
+                    tauri::Error::AssetNotFound("default application icon".into())
+                })?)
                 .menu(&menu)
                 .tooltip("LYNQO — 连接附近，自由传输")
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -126,11 +129,22 @@ pub fn run() {
             // Handle close-to-tray: intercept window close request
             let window = app.get_webview_window("main").unwrap();
             let window_handle = window.clone();
+            let app_handle = app.handle().clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    // Hide instead of close (close-to-tray behavior)
-                    api.prevent_close();
-                    let _ = window_handle.hide();
+                    match commands::lifecycle::read_close_behavior().as_str() {
+                        "quit" => app_handle.exit(0),
+                        "ask" => {
+                            api.prevent_close();
+                            let _ = window_handle.show();
+                            let _ = window_handle.set_focus();
+                            let _ = app_handle.emit("close-requested", ());
+                        }
+                        _ => {
+                            api.prevent_close();
+                            let _ = window_handle.hide();
+                        }
+                    }
                 }
             });
 
@@ -147,6 +161,7 @@ pub fn run() {
             commands::server_cmd::get_devices,
             commands::server_cmd::approve_device,
             commands::server_cmd::reject_device,
+            commands::server_cmd::forget_device,
             commands::server_cmd::get_transfers,
             commands::server_cmd::cancel_transfer,
             commands::server_cmd::get_settings,
@@ -161,6 +176,7 @@ pub fn run() {
             commands::lifecycle::set_autostart,
             commands::lifecycle::get_close_behavior,
             commands::lifecycle::set_close_behavior,
+            commands::lifecycle::quit_application,
             commands::lifecycle::get_app_version,
             commands::lifecycle::export_diagnostics,
             commands::lifecycle::open_log_dir,
