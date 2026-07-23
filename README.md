@@ -85,6 +85,8 @@ Windows 安装包会生成在：
 src-tauri/target/release/bundle/nsis/
 ```
 
+发布版请从 [Releases](https://github.com/Map1eBr1dge/lynqo/releases) 下载。发布工作流可提供 Windows（`.exe` / `.msi`）、macOS（Intel 与 Apple 芯片的 `.dmg`）以及 Linux x64（`.AppImage` / `.deb`）安装包；macOS 和 Linux 安装包由 GitHub Actions 在对应系统上构建。
+
 ### 零配置默认值
 
 正常使用不需要创建 `.env`，也不需要填写 IP、Token、数据库地址或运营主体信息。扫描二维码后，网页端默认使用当前连接地址与电脑端通信。
@@ -118,7 +120,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-GitHub Actions 会在推送到 `main` 或提交 Pull Request 时执行这些检查，并构建 Windows 与 macOS 安装产物。
+GitHub Actions 会在推送到 `main` 或提交 Pull Request 时执行这些检查，并构建 Windows 与 macOS 安装产物。需要发布 macOS 与 Linux 安装包时，可从 Actions 手动运行 `Publish Desktop Installers`，填写已有 Release 标签；它会将 Intel/Apple Silicon macOS 与 Linux x64 安装包直接附加到该 Release。
 
 ## 🧭 项目结构
 

@@ -85,6 +85,8 @@ On Windows, the NSIS installer is written to:
 src-tauri/target/release/bundle/nsis/
 ```
 
+Download published installers from [Releases](https://github.com/Map1eBr1dge/lynqo/releases). The publishing workflow can provide Windows (`.exe` / `.msi`), macOS (`.dmg` for Intel and Apple Silicon), and Linux x64 (`.AppImage` / `.deb`) installers. macOS and Linux packages are built by GitHub Actions on their respective operating systems.
+
 ### Zero-configuration default
 
 Normal use needs no `.env` file, fixed IP address, token, database address, or operator details. After a device scans the QR code, the web client uses the current connection address to reach the desktop host.
@@ -118,7 +120,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-GitHub Actions runs these checks for pushes to `main` and for pull requests, then builds Windows and macOS installer artifacts.
+GitHub Actions runs these checks for pushes to `main` and for pull requests, then builds Windows and macOS installer artifacts. To publish macOS and Linux packages, manually run `Publish Desktop Installers` in Actions with an existing Release tag; it attaches Intel/Apple Silicon macOS and Linux x64 installers directly to that Release.
 
 ## 🧭 Project structure
 
