@@ -1,0 +1,40 @@
+[package]
+name = "lynqo"
+version = "26.1.4"
+description = "LYNQO - LAN file transfer"
+authors = ["you"]
+license = "GPL-3.0-only"
+edition = "2021"
+
+[lib]
+name = "lynqo_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+axum = { version = "0.8", features = ["ws", "multipart"] }
+tower-http = { version = "0.6", features = ["fs"] }
+mdns-sd = "0.11"
+sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
+qrcode = "0.14"
+local-ip-address = "0.6"
+uuid = { version = "1", features = ["v4"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+tracing-appender = "0.2"
+chrono = "0.4"
+thiserror = "2"
+futures-util = "0.3"
+tokio-util = { version = "0.7", features = ["io"] }
+tauri-plugin-dialog = "2"

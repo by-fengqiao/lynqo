@@ -1,0 +1,103 @@
+/* LYNQO Keyframe Animations */
+
+/* ─── Fade In ─── */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 180ms ease forwards;
+}
+
+/* ─── Slide Up ─── */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 200ms ease forwards;
+}
+
+/* ─── Slide Down Sheet (mobile bottom sheet) ─── */
+@keyframes slide-down-sheet {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-down-sheet {
+  animation: slide-down-sheet 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ─── Panel In (dropdown / popover) ─── */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-panel-in {
+  animation: panel-in 200ms ease forwards;
+}
+
+/* ─── Progress Pulse (active transfer chunk) ─── */
+@keyframes progress-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.animate-progress-pulse {
+  animation: progress-pulse 1.5s ease-in-out infinite;
+}
+
+/* ─── Staggered list items ─── */
+.stagger-item {
+  opacity: 0;
+  animation: slide-up 200ms ease forwards;
+}
+
+.stagger-item:nth-child(1) { animation-delay: 0ms; }
+.stagger-item:nth-child(2) { animation-delay: 40ms; }
+.stagger-item:nth-child(3) { animation-delay: 80ms; }
+.stagger-item:nth-child(4) { animation-delay: 120ms; }
+.stagger-item:nth-child(5) { animation-delay: 160ms; }
+.stagger-item:nth-child(6) { animation-delay: 200ms; }
+
+/* ─── Reduced Motion ─── */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-up,
+  .animate-slide-down-sheet,
+  .animate-panel-in,
+  .animate-progress-pulse,
+  .stagger-item {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}

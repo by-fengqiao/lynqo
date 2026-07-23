@@ -1,0 +1,307 @@
+<script setup lang="ts">
+import {
+  Smartphone,
+  Laptop,
+  Monitor,
+  Tablet,
+  ShieldCheck,
+  ShieldOff,
+} from "lucide-vue-next";
+import { onMounted, shallowRef } from "vue";
+import { useDevicesStore } from "@/stores/devices";
+import DeviceAuthorizationActions from "@/components/devices/DeviceAuthorizationActions.vue";
+import type { Device } from "@/types";
+
+const devicesStore = useDevicesStore();
+const pendingDeviceId = shallowRef<string | null>(null);
+const actionError = shallowRef<string | null>(null);
+
+onMounted(() => {
+  void devicesStore.fetchDevices();
+});
+
+async function approve(deviceId: string, trusted: boolean) {
+  pendingDeviceId.value = deviceId;
+  actionError.value = null;
+  const succeeded = await devicesStore.approveDevice(deviceId, trusted);
+  pendingDeviceId.value = null;
+  if (!succeeded) {
+    actionError.value = "授权失败，请确认本地服务仍在运行后重试。";
+    return;
+  }
+  await devicesStore.fetchDevices();
+}
+
+async function reject(deviceId: string) {
+  pendingDeviceId.value = deviceId;
+  actionError.value = null;
+  const succeeded = await devicesStore.rejectDevice(deviceId);
+  pendingDeviceId.value = null;
+  if (!succeeded) {
+    actionError.value = "操作失败，请确认本地服务仍在运行后重试。";
+    return;
+  }
+  await devicesStore.fetchDevices();
+}
+
+function getDeviceIcon(device: Device) {
+  switch (device.deviceType) {
+    case "phone":
+      return Smartphone;
+    case "laptop":
+      return Laptop;
+    case "tablet":
+      return Tablet;
+    default:
+      return Monitor;
+  }
+}
+
+function getPlatformLabel(platform: string): string {
+  const map: Record<string, string> = {
+    windows: "Windows",
+    macos: "macOS",
+    ios: "iOS",
+    android: "Android",
+    web: "Web",
+  };
+  return map[platform] ?? platform;
+}
+</script>
+
+<template>
+  <div class="devices-page">
+    <header class="page-header">
+      <h1 class="page-title">设备</h1>
+      <p class="page-subtitle">{{ devicesStore.devices.length }} 台设备已配对</p>
+    </header>
+    <p v-if="actionError" class="action-error">{{ actionError }}</p>
+
+    <div class="devices-grid">
+      <div
+        v-for="device in devicesStore.devices"
+        :key="device.id"
+        class="device-card"
+        :class="{ 'device-card--offline': !device.online }"
+      >
+        <div class="device-card-top">
+          <div class="device-icon-wrap">
+            <component :is="getDeviceIcon(device)" :size="22" />
+          </div>
+          <span
+            class="online-dot"
+            :class="device.online ? 'online-dot--on' : 'online-dot--off'"
+          ></span>
+        </div>
+
+        <div class="device-card-body">
+          <h3 class="device-name">{{ device.name }}</h3>
+          <span class="device-platform">{{ getPlatformLabel(device.platform) }}</span>
+        </div>
+
+        <div class="device-card-meta">
+          <div class="meta-row">
+            <span class="meta-label">IP 地址</span>
+            <span class="meta-value">{{ device.ip }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">延迟</span>
+            <span class="meta-value">{{ device.latencyMs != null ? `${device.latencyMs}ms` : "—" }}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">状态</span>
+            <span class="meta-value" :class="device.online ? 'meta-value--online' : 'meta-value--offline'">
+              {{ device.online ? "在线" : "离线" }}
+            </span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">已授权</span>
+            <span class="meta-value">
+              <span v-if="device.trusted" class="approved-badge">
+                <ShieldCheck :size="13" /> 受信任
+              </span>
+              <span v-else-if="device.approved" class="approved-badge">
+                <ShieldCheck :size="13" /> 本次已允许
+              </span>
+              <span v-else class="unapproved-badge">
+                <ShieldOff :size="13" /> 待授权
+              </span>
+            </span>
+          </div>
+        </div>
+        <DeviceAuthorizationActions
+          :approved="device.approved"
+          :trusted="device.trusted"
+          :pending="pendingDeviceId === device.id"
+          @allow-once="approve(device.id, false)"
+          @trust="approve(device.id, true)"
+          @reject="reject(device.id)"
+        />
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.devices-page {
+  padding: 32px;
+  max-width: var(--content-max-width);
+  margin: 0 auto;
+}
+
+.page-header {
+  margin-bottom: 24px;
+}
+
+.action-error {
+  margin: 0 0 16px;
+  color: var(--color-state-error);
+  font-size: var(--text-sm);
+}
+
+.page-title {
+  font-size: var(--text-2xl);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 4px;
+  line-height: var(--leading-tight);
+}
+
+.page-subtitle {
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.devices-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.device-card {
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 20px;
+  transition: all var(--transition-normal);
+}
+
+.device-card:hover {
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-strong);
+}
+
+.device-card--offline {
+  opacity: 0.6;
+}
+
+.device-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.device-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-md);
+  background: var(--color-selected);
+  color: var(--color-brand-primary);
+}
+
+.online-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--radius-full);
+}
+
+.online-dot--on {
+  background: var(--color-state-success);
+  box-shadow: 0 0 0 3px var(--color-state-success-soft);
+}
+
+.online-dot--off {
+  background: var(--color-text-tertiary);
+}
+
+.device-card-body {
+  margin-bottom: 16px;
+}
+
+.device-name {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0 0 2px;
+}
+
+.device-platform {
+  font-size: var(--text-sm);
+  color: var(--color-text-secondary);
+}
+
+.device-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+}
+
+.meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meta-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.meta-value {
+  font-size: var(--text-sm);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+}
+
+.meta-value--online {
+  color: var(--color-state-success);
+}
+
+.meta-value--offline {
+  color: var(--color-text-tertiary);
+}
+
+.approved-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-state-success);
+  background: var(--color-state-success-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+}
+
+.unapproved-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-tertiary);
+  background: var(--color-surface-inset);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+}
+</style>

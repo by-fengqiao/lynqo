@@ -1,0 +1,457 @@
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, provide, ref, shallowRef } from "vue";
+import { RouterLink, RouterView } from "vue-router";
+import {
+  Home,
+  ArrowLeftRight,
+  Download,
+  Monitor,
+  Settings,
+  HelpCircle,
+} from "lucide-vue-next";
+import { useAppStore } from "../stores/app";
+import { useDevicesStore } from "../stores/devices";
+import { useTransfersStore } from "../stores/transfers";
+import { useSettingsStore } from "../stores/settings";
+import ThemeToggle from "../components/common/ThemeToggle.vue";
+import AppLogo from "../components/common/AppLogo.vue";
+import ConnectDevicePanel from "../components/overlays/ConnectDevicePanel.vue";
+import DeviceAccessRequestDialog from "../components/overlays/DeviceAccessRequestDialog.vue";
+import { openConnectPanelKey } from "../composables/useConnectPanel";
+import { wsClient } from "@/services/websocket";
+
+const appStore = useAppStore();
+const devicesStore = useDevicesStore();
+const transfersStore = useTransfersStore();
+const settingsStore = useSettingsStore();
+
+const showConnectPanel = ref(false);
+const accessDecisionPending = shallowRef(false);
+const pendingDeviceAccess = computed(() => devicesStore.currentPendingApproval);
+
+function refreshDevicesAfterSocketConnect() {
+  void devicesStore.fetchDevices();
+}
+
+const emit = defineEmits<{
+  (e: "connect-device"): void;
+}>();
+
+onMounted(async () => {
+  await appStore.initialize();
+  await settingsStore.fetchSettings();
+  // Subscribe before opening the socket. Otherwise a phone that reconnects
+  // during startup can emit its approval request before the desktop listens.
+  devicesStore.setupWebSocketListeners();
+  transfersStore.setupWebSocketListeners();
+  wsClient.on("connected", refreshDevicesAfterSocketConnect);
+  appStore.setupConnectionMonitor();
+  await appStore.startServer();
+  appStore.connectWebSocket();
+  await devicesStore.fetchDevices();
+  await transfersStore.fetchTransfers();
+});
+
+onUnmounted(() => {
+  wsClient.off("connected", refreshDevicesAfterSocketConnect);
+});
+
+function openConnectPanel() {
+  showConnectPanel.value = true;
+  appStore.refreshQrCode();
+}
+
+// Let nested pages (e.g. HomePage) open the connect panel
+provide(openConnectPanelKey, openConnectPanel);
+
+function handleConnectDevice() {
+  showConnectPanel.value = !showConnectPanel.value;
+  if (showConnectPanel.value) {
+    appStore.refreshQrCode();
+  }
+  emit("connect-device");
+}
+
+async function allowDeviceAccess(deviceId: string, trusted: boolean) {
+  const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? "该设备";
+  accessDecisionPending.value = true;
+  try {
+    const succeeded = await devicesStore.approveDevice(deviceId, trusted);
+    if (succeeded) {
+      appStore.pushToast(
+        "success",
+        trusted ? "设备已信任" : "已允许本次接入",
+        trusted ? `${deviceName} 今后会自动接入。` : `${deviceName} 断开后需要再次确认。`
+      );
+    } else {
+      appStore.pushToast("error", "无法更新设备权限", "请确认本地服务仍在运行后重试。");
+    }
+  } finally {
+    accessDecisionPending.value = false;
+    await devicesStore.fetchDevices();
+  }
+}
+
+async function rejectDeviceAccess(deviceId: string) {
+  const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? "该设备";
+  accessDecisionPending.value = true;
+  try {
+    const succeeded = await devicesStore.rejectDevice(deviceId);
+    if (succeeded) {
+      appStore.pushToast("info", "已拒绝设备接入", `${deviceName} 仍可在设备页重新授权。`);
+    } else {
+      appStore.pushToast("error", "无法更新设备权限", "请确认本地服务仍在运行后重试。");
+    }
+  } finally {
+    accessDecisionPending.value = false;
+    await devicesStore.fetchDevices();
+  }
+}
+
+const navItems = [
+  { label: "首页", icon: Home, path: "/" },
+  { label: "传输中心", icon: ArrowLeftRight, path: "/transfers" },
+  { label: "接收文件", icon: Download, path: "/received" },
+  { label: "设备", icon: Monitor, path: "/devices" },
+  { label: "设置", icon: Settings, path: "/settings" },
+];
+</script>
+
+<template>
+  <div class="desktop-layout">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="logo">
+          <AppLogo :size="28" />
+          <span class="logo-text">
+            <span>LYN</span><span class="logo-q">Q</span><span>O</span>
+          </span>
+        </div>
+        <span class="network-badge">{{ appStore.networkName }}</span>
+      </div>
+
+      <div class="topbar-right">
+        <span class="status-indicator">
+          <span
+            class="status-dot"
+            :class="appStore.serverRunning ? 'status-dot--running' : 'status-dot--stopped'"
+          ></span>
+          <span class="status-label">{{ appStore.serverRunning ? "运行中" : "已停止" }}</span>
+        </span>
+
+        <span class="device-count-badge">
+          {{ devicesStore.onlineDevices.length }} 台设备
+        </span>
+
+        <button class="btn-primary" @click="handleConnectDevice">
+          连接设备
+        </button>
+
+        <ThemeToggle />
+
+        <RouterLink to="/settings" class="icon-btn icon-btn--link" title="设置">
+          <Settings :size="16" />
+        </RouterLink>
+
+      </div>
+    </header>
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <nav class="sidebar-nav">
+        <RouterLink
+          v-for="item in navItems"
+          :key="item.path"
+          :to="item.path"
+          class="nav-item"
+          exact-active-class="nav-item--active"
+        >
+          <component :is="item.icon" :size="16" />
+          <span>{{ item.label }}</span>
+        </RouterLink>
+      </nav>
+
+      <div class="sidebar-footer">
+        <RouterLink to="/about" class="version-link">
+          <span class="version">v{{ appStore.appVersion }}</span>
+        </RouterLink>
+        <span class="tray-status">
+          <span class="status-dot status-dot--running"></span>
+          系统托盘运行中
+        </span>
+        <RouterLink to="/help" class="help-link">
+          <HelpCircle :size="13" />
+          帮助中心
+        </RouterLink>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <div class="content-wrapper">
+        <RouterView />
+      </div>
+    </main>
+
+    <!-- Connect Panel -->
+    <ConnectDevicePanel
+      :visible="showConnectPanel"
+      @close="showConnectPanel = false"
+    />
+    <DeviceAccessRequestDialog
+      :device="pendingDeviceAccess"
+      :pending="accessDecisionPending"
+      @allow="allowDeviceAccess"
+      @reject="rejectDeviceAccess"
+    />
+  </div>
+</template>
+
+<style scoped>
+.desktop-layout {
+  min-height: 100vh;
+}
+
+/* ─── Top Bar ─── */
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--topbar-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  background: color-mix(in srgb, var(--color-surface-card) 80%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-border);
+  z-index: var(--z-sticky);
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-q {
+  color: var(--color-primary, #246BFF);
+}
+
+.logo-text {
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.network-badge {
+  font-size: var(--text-xs);
+  color: var(--color-text-brand);
+  background: var(--color-brand-primary-soft);
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: var(--weight-medium);
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-full);
+}
+
+.status-dot--running {
+  background: var(--color-state-success);
+  box-shadow: 0 0 0 2px var(--color-state-success-soft);
+}
+
+.status-dot--stopped {
+  background: var(--color-text-tertiary);
+}
+
+.status-label {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+}
+
+.device-count-badge {
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  background: var(--color-surface-inset);
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: #fff;
+  background: var(--color-brand-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.btn-primary:hover {
+  background: var(--color-brand-primary-hover);
+}
+
+.btn-primary:active {
+  background: var(--color-brand-primary-active);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.icon-btn:hover {
+  background: var(--color-hover);
+  color: var(--color-text-secondary);
+}
+
+.icon-btn--link {
+  text-decoration: none;
+}
+
+/* ─── Sidebar ─── */
+.sidebar {
+  position: fixed;
+  top: var(--topbar-height);
+  left: 0;
+  bottom: 0;
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 16px 12px;
+  background: var(--color-surface-card);
+  border-right: 1px solid var(--color-border);
+  z-index: var(--z-base);
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: var(--radius-md);
+  border-left: 2.5px solid transparent;
+  font-size: var(--text-base);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.nav-item:hover {
+  background: var(--color-hover);
+  color: var(--color-text-primary);
+}
+
+.nav-item--active {
+  color: var(--color-brand-primary);
+  background: var(--color-brand-primary-soft);
+  border-left-color: var(--color-brand-primary);
+  font-weight: var(--weight-medium);
+}
+
+/* ─── Sidebar Footer ─── */
+.sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
+}
+
+.version {
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.version-link {
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.version-link:hover .version {
+  color: var(--color-text-brand);
+}
+
+.tray-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+}
+
+.help-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+.help-link:hover {
+  color: var(--color-text-brand);
+}
+
+/* ─── Main Content ─── */
+.main-content {
+  margin-left: var(--sidebar-width);
+  padding-top: var(--topbar-height);
+  min-height: 100vh;
+}
+
+.content-wrapper {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 32px;
+}
+</style>
