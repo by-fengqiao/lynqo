@@ -1,6 +1,6 @@
 [package]
 name = "lynqo"
-version = "26.1.5"
+version = "26.1.6"
 description = "LYNQO - LAN file transfer"
 authors = ["Map1eBr1dge"]
 license = "GPL-3.0-only"
@@ -38,3 +38,4 @@ thiserror = "2"
 futures-util = "0.3"
 tokio-util = { version = "0.7", features = ["io"] }
 tauri-plugin-dialog = "2"
+tauri-plugin-updater = "2.10.1"

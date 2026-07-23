@@ -51,6 +51,7 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state.clone())
         .setup(move |app| {
             // Build tray menu

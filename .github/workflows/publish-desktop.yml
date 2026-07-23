@@ -84,6 +84,9 @@ jobs:
 
       - name: Build installers
         if: inputs.platform == 'all' || inputs.platform == matrix.platform
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx tauri build --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
 
       - name: Attach installers to the existing Release
@@ -94,6 +97,7 @@ jobs:
         run: |
           shopt -s nullglob
           assets=(${{ matrix.assets }})
+          while IFS= read -r -d '' signature; do assets+=("$signature"); done < <(find src-tauri/target -type f -name '*.sig' -print0)
           if [ ${#assets[@]} -eq 0 ]; then
             echo "No installer assets were produced."
             exit 1

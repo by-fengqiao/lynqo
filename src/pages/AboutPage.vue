@@ -1,13 +1,45 @@
 <script setup lang="ts">
 import { useRouter } from "vue-router";
+import { shallowRef } from "vue";
+import { check, type Update } from "@tauri-apps/plugin-updater";
 import { ArrowLeft, BookOpen, Shield } from "lucide-vue-next";
 import AppLogo from "../components/common/AppLogo.vue";
 import { useAppStore } from "@/stores/app";
 import { useLocale } from "@/i18n";
+import { isTauri } from "@/services/tauri";
 
 const router = useRouter();
 const appStore = useAppStore();
 const { t } = useLocale();
+const availableUpdate = shallowRef<Update | null>(null);
+const checkingUpdate = shallowRef(false);
+
+async function checkForUpdate() {
+  if (!isTauri() || checkingUpdate.value) return;
+  checkingUpdate.value = true;
+  try {
+    availableUpdate.value = await check();
+    appStore.pushToast(
+      availableUpdate.value ? "info" : "success",
+      availableUpdate.value ? t("about.updateAvailable", { version: availableUpdate.value.version }) : t("about.noUpdate"),
+    );
+  } catch (error) {
+    appStore.pushToast("error", t("about.updateError"), error instanceof Error ? error.message : undefined);
+  } finally {
+    checkingUpdate.value = false;
+  }
+}
+
+async function installUpdate() {
+  if (!availableUpdate.value) return;
+  try {
+    await availableUpdate.value.downloadAndInstall();
+    availableUpdate.value = null;
+    appStore.pushToast("success", t("about.updateInstalled"));
+  } catch (error) {
+    appStore.pushToast("error", t("about.updateError"), error instanceof Error ? error.message : undefined);
+  }
+}
 
 function goBack() {
   router.back();
@@ -41,6 +73,15 @@ const thirdPartyLibs = [
       <!-- Description -->
       <p class="app-desc">{{ t("about.tagline") }}</p>
       <p class="app-tagline">CONNECT NEARBY. TRANSFER FREELY.</p>
+
+      <div v-if="isTauri()" class="update-actions">
+        <button class="update-btn" type="button" :disabled="checkingUpdate" @click="checkForUpdate">
+          {{ checkingUpdate ? t("about.checkingUpdate") : t("about.checkUpdate") }}
+        </button>
+        <button v-if="availableUpdate" class="update-btn update-btn--primary" type="button" @click="installUpdate">
+          {{ t("about.installUpdate", { version: availableUpdate.version }) }}
+        </button>
+      </div>
 
       <div class="about-links">
         <RouterLink to="/help" class="about-link">
@@ -147,6 +188,35 @@ const thirdPartyLibs = [
   background: var(--color-surface-inset);
   padding: 2px 10px;
   border-radius: var(--radius-full);
+}
+
+.update-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin: 18px 0 4px;
+}
+
+.update-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-card);
+  color: var(--color-text-brand);
+  padding: 8px 14px;
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.update-btn--primary {
+  border-color: var(--color-brand-primary);
+  background: var(--color-brand-primary);
+  color: var(--color-text-inverse);
+}
+
+.update-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .app-desc {
