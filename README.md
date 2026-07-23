@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src/assets/logo.svg" width="96" alt="LYNQO logo" />
+  <img src="src-tauri/icons/128x128.png" width="96" alt="LYNQO 应用图标" />
 </p>
 
 <h1 align="center">LYNQO</h1>
