@@ -17,6 +17,7 @@ import { fetchHostStatus } from "@/services/api";
 
 export const useAppStore = defineStore("app", () => {
   const serverRunning = ref<AppState["serverRunning"]>(false);
+  const trayReady = ref(isTauri());
   const networkName = ref<AppState["networkName"]>("本地网络");
   const localIp = ref<AppState["localIp"]>("");
   const deviceName = ref<AppState["deviceName"]>("LYNQO");
@@ -251,6 +252,7 @@ export const useAppStore = defineStore("app", () => {
   return {
     // State
     serverRunning,
+    trayReady,
     networkName,
     localIp,
     deviceName,

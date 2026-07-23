@@ -12,7 +12,7 @@
     "tauri": "tauri",
     "typecheck": "vue-tsc --noEmit",
     "lint": "echo 'no linter configured'",
-    "test": "echo 'no tests configured'"
+    "test": "npm run typecheck && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/plugin-dialog": "^2.7.2",

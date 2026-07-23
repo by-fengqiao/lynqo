@@ -143,6 +143,9 @@ const navItems = computed(() => [
           ></span>
           <span class="status-label">{{ appStore.serverRunning ? t("app.running") : t("app.stopped") }}</span>
         </span>
+        <button class="service-toggle-btn" type="button" @click="appStore.toggleServer()">
+          {{ appStore.serverRunning ? t("app.stopService") : t("app.startService") }}
+        </button>
 
         <span class="device-count-badge">
           {{ t("app.deviceCount", { count: devicesStore.onlineDevices.length }) }}
@@ -181,8 +184,8 @@ const navItems = computed(() => [
           <span class="version">v{{ appStore.appVersion }}</span>
         </RouterLink>
         <span class="tray-status">
-          <span class="status-dot status-dot--running"></span>
-          {{ t("app.trayRunning") }}
+          <span class="status-dot" :class="appStore.trayReady ? 'status-dot--running' : 'status-dot--stopped'"></span>
+          {{ appStore.trayReady ? t("app.trayReady") : t("app.trayUnavailable") }}
         </span>
         <RouterLink to="/help" class="help-link">
           <HelpCircle :size="13" />
@@ -297,6 +300,21 @@ const navItems = computed(() => [
 .status-label {
   font-size: var(--text-xs);
   color: var(--color-text-secondary);
+}
+
+.service-toggle-btn {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-card);
+  color: var(--color-text-brand);
+  padding: 5px 10px;
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.service-toggle-btn:hover {
+  background: var(--color-hover);
+  border-color: var(--color-brand-primary);
 }
 
 .device-count-badge {
