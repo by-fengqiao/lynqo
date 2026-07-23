@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from "vue";
+import { useLocale } from "@/i18n";
 export type TransferCenterFilter = "all" | "active" | "completed" | "attention";
 
 interface Props {
@@ -11,17 +13,18 @@ const props = defineProps<Props>();
 const emit = defineEmits<{
   "update:modelValue": [value: TransferCenterFilter];
 }>();
+const { t } = useLocale();
 
-const filters: { value: TransferCenterFilter; label: string }[] = [
-  { value: "all", label: "全部" },
-  { value: "active", label: "进行中" },
-  { value: "completed", label: "已完成" },
-  { value: "attention", label: "需处理" },
-];
+const filters = computed<{ value: TransferCenterFilter; label: string }[]>(() => [
+  { value: "all", label: t("transfers.filter.all") },
+  { value: "active", label: t("transfers.filter.active") },
+  { value: "completed", label: t("transfers.filter.completed") },
+  { value: "attention", label: t("transfers.filter.attention") },
+]);
 </script>
 
 <template>
-  <nav class="filter-bar" aria-label="传输状态筛选">
+  <nav class="filter-bar" :aria-label="t('transfers.filter')">
     <button
       v-for="filter in filters"
       :key="filter.value"

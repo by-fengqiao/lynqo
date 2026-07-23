@@ -2,12 +2,15 @@ import { createApp } from "vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";
 import router from "./router";
+import { initializeLocale } from "./i18n";
 
 import "./styles/tokens.css";
 import "./styles/global.css";
 import "./styles/animations.css";
 
 const app = createApp(App);
+
+initializeLocale();
 
 app.use(createPinia());
 app.use(router);

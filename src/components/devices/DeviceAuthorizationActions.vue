@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Check, ShieldCheck, ShieldOff, X } from "lucide-vue-next";
+import { useLocale } from "@/i18n";
 
 interface Props {
   approved: boolean;
@@ -16,6 +17,7 @@ const emit = defineEmits<{
   trust: [];
   reject: [];
 }>();
+const { t } = useLocale();
 </script>
 
 <template>
@@ -24,21 +26,21 @@ const emit = defineEmits<{
       <span class="authorized-label">
         <ShieldCheck v-if="trusted" :size="14" />
         <Check v-else :size="14" />
-        {{ trusted ? "受信任" : "本次已允许" }}
+        {{ trusted ? t("devices.trusted") : t("devices.allowedOnce") }}
       </span>
       <button class="revoke-button" type="button" :disabled="pending" @click="emit('reject')">
-        <ShieldOff :size="14" /> {{ trusted ? "撤销信任" : "结束本次授权" }}
+        <ShieldOff :size="14" /> {{ trusted ? t("devices.revokeTrust") : t("devices.endSession") }}
       </button>
     </template>
     <template v-else>
       <button class="reject-button" type="button" :disabled="pending" @click="emit('reject')">
-        <X :size="14" /> 拒绝
+        <X :size="14" /> {{ t("devices.reject") }}
       </button>
       <button class="approve-button" type="button" :disabled="pending" @click="emit('allowOnce')">
-        <Check :size="14" /> {{ pending ? "处理中…" : "仅本次允许" }}
+        <Check :size="14" /> {{ pending ? t("devices.processing") : t("devices.allowOnce") }}
       </button>
       <button class="trust-button" type="button" :disabled="pending" @click="emit('trust')">
-        <ShieldCheck :size="14" /> 信任并允许
+        <ShieldCheck :size="14" /> {{ t("devices.trustAndAllow") }}
       </button>
     </template>
   </div>

@@ -1,6 +1,6 @@
 [package]
 name = "lynqo"
-version = "26.1.4"
+version = "26.1.5"
 description = "LYNQO - LAN file transfer"
 authors = ["Map1eBr1dge"]
 license = "GPL-3.0-only"

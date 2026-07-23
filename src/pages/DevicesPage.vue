@@ -11,8 +11,10 @@ import { onMounted, shallowRef } from "vue";
 import { useDevicesStore } from "@/stores/devices";
 import DeviceAuthorizationActions from "@/components/devices/DeviceAuthorizationActions.vue";
 import type { Device } from "@/types";
+import { useLocale } from "@/i18n";
 
 const devicesStore = useDevicesStore();
+const { t } = useLocale();
 const pendingDeviceId = shallowRef<string | null>(null);
 const actionError = shallowRef<string | null>(null);
 
@@ -26,7 +28,7 @@ async function approve(deviceId: string, trusted: boolean) {
   const succeeded = await devicesStore.approveDevice(deviceId, trusted);
   pendingDeviceId.value = null;
   if (!succeeded) {
-    actionError.value = "授权失败，请确认本地服务仍在运行后重试。";
+    actionError.value = t("devices.authorizationFailed");
     return;
   }
   await devicesStore.fetchDevices();
@@ -38,7 +40,7 @@ async function reject(deviceId: string) {
   const succeeded = await devicesStore.rejectDevice(deviceId);
   pendingDeviceId.value = null;
   if (!succeeded) {
-    actionError.value = "操作失败，请确认本地服务仍在运行后重试。";
+    actionError.value = t("devices.actionFailed");
     return;
   }
   await devicesStore.fetchDevices();
@@ -72,8 +74,8 @@ function getPlatformLabel(platform: string): string {
 <template>
   <div class="devices-page">
     <header class="page-header">
-      <h1 class="page-title">设备</h1>
-      <p class="page-subtitle">{{ devicesStore.devices.length }} 台设备已配对</p>
+      <h1 class="page-title">{{ t("devices.title") }}</h1>
+      <p class="page-subtitle">{{ t("devices.pairedCount", { count: devicesStore.devices.length }) }}</p>
     </header>
     <p v-if="actionError" class="action-error">{{ actionError }}</p>
 
@@ -101,30 +103,30 @@ function getPlatformLabel(platform: string): string {
 
         <div class="device-card-meta">
           <div class="meta-row">
-            <span class="meta-label">IP 地址</span>
+            <span class="meta-label">{{ t("devices.ip") }}</span>
             <span class="meta-value">{{ device.ip }}</span>
           </div>
           <div class="meta-row">
-            <span class="meta-label">延迟</span>
+            <span class="meta-label">{{ t("devices.latency") }}</span>
             <span class="meta-value">{{ device.latencyMs != null ? `${device.latencyMs}ms` : "—" }}</span>
           </div>
           <div class="meta-row">
-            <span class="meta-label">状态</span>
+            <span class="meta-label">{{ t("devices.status") }}</span>
             <span class="meta-value" :class="device.online ? 'meta-value--online' : 'meta-value--offline'">
-              {{ device.online ? "在线" : "离线" }}
+              {{ device.online ? t("home.online") : t("home.offline") }}
             </span>
           </div>
           <div class="meta-row">
-            <span class="meta-label">已授权</span>
+            <span class="meta-label">{{ t("devices.authorization") }}</span>
             <span class="meta-value">
               <span v-if="device.trusted" class="approved-badge">
-                <ShieldCheck :size="13" /> 受信任
+                <ShieldCheck :size="13" /> {{ t("devices.trusted") }}
               </span>
               <span v-else-if="device.approved" class="approved-badge">
-                <ShieldCheck :size="13" /> 本次已允许
+                <ShieldCheck :size="13" /> {{ t("devices.allowedOnce") }}
               </span>
               <span v-else class="unapproved-badge">
-                <ShieldOff :size="13" /> 待授权
+                <ShieldOff :size="13" /> {{ t("devices.pendingApproval") }}
               </span>
             </span>
           </div>

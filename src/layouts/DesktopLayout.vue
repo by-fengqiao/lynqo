@@ -19,11 +19,13 @@ import ConnectDevicePanel from "../components/overlays/ConnectDevicePanel.vue";
 import DeviceAccessRequestDialog from "../components/overlays/DeviceAccessRequestDialog.vue";
 import { openConnectPanelKey } from "../composables/useConnectPanel";
 import { wsClient } from "@/services/websocket";
+import { useLocale } from "@/i18n";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
 const transfersStore = useTransfersStore();
 const settingsStore = useSettingsStore();
+const { t } = useLocale();
 
 const showConnectPanel = ref(false);
 const accessDecisionPending = shallowRef(false);
@@ -73,18 +75,20 @@ function handleConnectDevice() {
 }
 
 async function allowDeviceAccess(deviceId: string, trusted: boolean) {
-  const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? "该设备";
+  const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? t("device.thisDevice");
   accessDecisionPending.value = true;
   try {
     const succeeded = await devicesStore.approveDevice(deviceId, trusted);
     if (succeeded) {
       appStore.pushToast(
         "success",
-        trusted ? "设备已信任" : "已允许本次接入",
-        trusted ? `${deviceName} 今后会自动接入。` : `${deviceName} 断开后需要再次确认。`
+        trusted ? t("device.trusted") : t("device.allowedOnce"),
+        trusted
+          ? t("device.trustedDescription", { name: deviceName })
+          : t("device.allowedOnceDescription", { name: deviceName })
       );
     } else {
-      appStore.pushToast("error", "无法更新设备权限", "请确认本地服务仍在运行后重试。");
+      appStore.pushToast("error", t("device.permissionUpdateFailed"), t("device.permissionUpdateFailedDescription"));
     }
   } finally {
     accessDecisionPending.value = false;
@@ -93,14 +97,14 @@ async function allowDeviceAccess(deviceId: string, trusted: boolean) {
 }
 
 async function rejectDeviceAccess(deviceId: string) {
-  const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? "该设备";
+  const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? t("device.thisDevice");
   accessDecisionPending.value = true;
   try {
     const succeeded = await devicesStore.rejectDevice(deviceId);
     if (succeeded) {
-      appStore.pushToast("info", "已拒绝设备接入", `${deviceName} 仍可在设备页重新授权。`);
+      appStore.pushToast("info", t("device.rejected"), t("device.rejectedDescription", { name: deviceName }));
     } else {
-      appStore.pushToast("error", "无法更新设备权限", "请确认本地服务仍在运行后重试。");
+      appStore.pushToast("error", t("device.permissionUpdateFailed"), t("device.permissionUpdateFailedDescription"));
     }
   } finally {
     accessDecisionPending.value = false;
@@ -108,13 +112,13 @@ async function rejectDeviceAccess(deviceId: string) {
   }
 }
 
-const navItems = [
-  { label: "首页", icon: Home, path: "/" },
-  { label: "传输中心", icon: ArrowLeftRight, path: "/transfers" },
-  { label: "接收文件", icon: Download, path: "/received" },
-  { label: "设备", icon: Monitor, path: "/devices" },
-  { label: "设置", icon: Settings, path: "/settings" },
-];
+const navItems = computed(() => [
+  { label: t("nav.home"), icon: Home, path: "/" },
+  { label: t("nav.transfers"), icon: ArrowLeftRight, path: "/transfers" },
+  { label: t("nav.received"), icon: Download, path: "/received" },
+  { label: t("nav.devices"), icon: Monitor, path: "/devices" },
+  { label: t("nav.settings"), icon: Settings, path: "/settings" },
+]);
 </script>
 
 <template>
@@ -137,20 +141,20 @@ const navItems = [
             class="status-dot"
             :class="appStore.serverRunning ? 'status-dot--running' : 'status-dot--stopped'"
           ></span>
-          <span class="status-label">{{ appStore.serverRunning ? "运行中" : "已停止" }}</span>
+          <span class="status-label">{{ appStore.serverRunning ? t("app.running") : t("app.stopped") }}</span>
         </span>
 
         <span class="device-count-badge">
-          {{ devicesStore.onlineDevices.length }} 台设备
+          {{ t("app.deviceCount", { count: devicesStore.onlineDevices.length }) }}
         </span>
 
         <button class="btn-primary" @click="handleConnectDevice">
-          连接设备
+          {{ t("app.connectDevice") }}
         </button>
 
         <ThemeToggle />
 
-        <RouterLink to="/settings" class="icon-btn icon-btn--link" title="设置">
+        <RouterLink to="/settings" class="icon-btn icon-btn--link" :title="t('nav.settings')">
           <Settings :size="16" />
         </RouterLink>
 
@@ -178,11 +182,11 @@ const navItems = [
         </RouterLink>
         <span class="tray-status">
           <span class="status-dot status-dot--running"></span>
-          系统托盘运行中
+          {{ t("app.trayRunning") }}
         </span>
         <RouterLink to="/help" class="help-link">
           <HelpCircle :size="13" />
-          帮助中心
+          {{ t("nav.help") }}
         </RouterLink>
       </div>
     </aside>

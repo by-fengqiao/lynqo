@@ -3,8 +3,10 @@ import { computed } from "vue";
 import { Sun, Moon, Monitor } from "lucide-vue-next";
 import { useSettingsStore } from "../../stores/settings";
 import type { ThemeMode } from "../../types";
+import { useLocale } from "@/i18n";
 
 const settingsStore = useSettingsStore();
+const { t } = useLocale();
 
 const currentMode = computed(() => settingsStore.themeMode);
 
@@ -30,7 +32,7 @@ function cycleTheme() {
 <template>
   <button
     class="theme-toggle"
-    :title="`当前主题: ${currentMode}`"
+    :title="t('theme.current', { mode: t(`theme.${currentMode}`) })"
     @click="cycleTheme"
   >
     <Transition name="icon-fade" mode="out-in">

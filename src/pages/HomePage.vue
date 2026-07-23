@@ -26,11 +26,13 @@ import { formatRelativeTime } from "@/utils/format";
 import { openConnectPanelKey } from "@/composables/useConnectPanel";
 import type { Device } from "@/types";
 import type { PendingTransferFile } from "@/stores/transfers";
+import { useLocale } from "@/i18n";
 
 const devicesStore = useDevicesStore();
 const appStore = useAppStore();
 const settingsStore = useSettingsStore();
 const transfersStore = useTransfersStore();
+const { t } = useLocale();
 
 // Opens the connect panel hosted by DesktopLayout (查看连接地址)
 const openConnectPanel = inject(openConnectPanelKey, () => {});
@@ -80,24 +82,24 @@ interface RecentTransferRow {
 }
 
 function peerName(id: string): string {
-  if (id === "local") return "本机";
+  if (id === "local") return t("device.thisDevice");
   return devicesStore.devices.find((d) => d.id === id)?.name ?? id;
 }
 
 function statusLabel(status: string): string {
   const map: Record<string, string> = {
-    waiting: "等待中",
-    requesting: "请求中",
-    awaiting_acceptance: "等待接收",
-    accepted: "已接受",
-    transferring: "传输中",
-    paused: "已暂停",
-    verifying: "校验中",
-    completed: "已完成",
-    rejected: "已拒绝",
-    expired: "已过期",
-    cancelled: "已取消",
-    failed: "失败",
+    waiting: t("transfer.status.waiting"),
+    requesting: t("transfer.status.requesting"),
+    awaiting_acceptance: t("transfer.status.awaitingAcceptance"),
+    accepted: t("transfer.status.accepted"),
+    transferring: t("transfer.status.transferring"),
+    paused: t("transfer.status.paused"),
+    verifying: t("transfer.status.verifying"),
+    completed: t("transfer.status.completed"),
+    rejected: t("transfer.status.rejected"),
+    expired: t("transfer.status.expired"),
+    cancelled: t("transfer.status.cancelled"),
+    failed: t("transfer.status.failed"),
   };
   return map[status] ?? status;
 }
@@ -123,13 +125,13 @@ const recentTransfers = computed<RecentTransferRow[]>(() => {
     .slice(0, 5);
 
   if (latest.length > 0) {
-    return latest.map((t) => ({
-      id: t.id,
-      fileName: t.files[0]?.name ?? "未命名文件",
-      route: `${peerName(t.sourceDeviceId)} → ${peerName(t.targetDeviceId)}`,
-      time: formatRelativeTime(t.completedAt ?? t.createdAt),
-      size: formatSize(t.totalBytes),
-      status: t.status,
+    return latest.map((transfer) => ({
+      id: transfer.id,
+      fileName: transfer.files[0]?.name ?? t("home.fileName"),
+      route: `${peerName(transfer.sourceDeviceId)} → ${peerName(transfer.targetDeviceId)}`,
+      time: formatRelativeTime(transfer.completedAt ?? transfer.createdAt),
+      size: formatSize(transfer.totalBytes),
+      status: transfer.status,
     }));
   }
   return [];
@@ -337,13 +339,13 @@ async function handleSend() {
 const sendBtnLabel = computed(() => {
   switch (sendStatus.value) {
     case "waiting":
-      return "等待接收...";
+      return t("home.waitingToReceive");
     case "sending":
-      return "正在发送...";
+      return t("home.sending");
     case "requested":
-      return "已发出请求";
+      return t("home.requestSent");
     default:
-      return `发送 ${pendingFiles.value.length} 个文件`;
+      return t("home.sendCount", { count: pendingFiles.value.length });
   }
 });
 </script>
@@ -353,10 +355,10 @@ const sendBtnLabel = computed(() => {
     <!-- Title Section -->
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">发送文件</h1>
-        <p class="page-subtitle">选择附近设备，或将文件拖入页面开始传输。</p>
+        <h1 class="page-title">{{ t("home.title") }}</h1>
+        <p class="page-subtitle">{{ t("home.subtitle") }}</p>
       </div>
-      <a class="header-link" href="#" @click.prevent="openConnectPanel">查看连接地址</a>
+      <a class="header-link" href="#" @click.prevent="openConnectPanel">{{ t("home.connectionAddress") }}</a>
     </header>
 
     <!-- Content Card -->
@@ -365,16 +367,16 @@ const sendBtnLabel = computed(() => {
       <section class="devices-section">
         <div class="section-header">
           <Radar :size="16" class="section-icon" />
-          <span class="section-title">附近设备</span>
+          <span class="section-title">{{ t("home.nearbyDevices") }}</span>
         </div>
 
         <div class="device-table">
           <div class="device-row device-row--header">
             <span></span>
-            <span>设备名称</span>
-            <span>平台</span>
-            <span>状态</span>
-            <span>延迟</span>
+            <span>{{ t("home.deviceName") }}</span>
+            <span>{{ t("home.platform") }}</span>
+            <span>{{ t("home.status") }}</span>
+            <span>{{ t("home.latency") }}</span>
           </div>
           <div
             v-for="device in devicesStore.devices"
@@ -403,7 +405,7 @@ const sendBtnLabel = computed(() => {
                 class="status-dot"
                 :class="device.online && device.approved ? 'status-dot--online' : 'status-dot--offline'"
               ></span>
-              {{ !device.approved ? "未授权" : device.online ? "在线" : "离线" }}
+              {{ !device.approved ? t("home.unapproved") : device.online ? t("home.online") : t("home.offline") }}
             </span>
             <span class="device-latency">
               {{ device.latencyMs != null ? `${device.latencyMs}ms` : "—" }}
@@ -422,17 +424,17 @@ const sendBtnLabel = computed(() => {
       >
         <UploadCloud :size="32" class="drop-zone-icon" />
         <p class="drop-zone-text">
-          拖入文件发送到
-          <strong>{{ selectedDevice?.name ?? "未选择设备" }}</strong>
+          {{ t("home.dropTo") }}
+          <strong>{{ selectedDevice?.name ?? t("home.noDeviceSelected") }}</strong>
         </p>
-        <p class="drop-zone-hint">支持照片、视频、文档、压缩包和文件夹。</p>
-        <button class="drop-zone-link" @click="openFilePicker">或点击选择文件</button>
+        <p class="drop-zone-hint">{{ t("home.supportedFiles") }}</p>
+        <button class="drop-zone-link" @click="openFilePicker">{{ t("home.chooseFile") }}</button>
       </section>
 
       <!-- File Tray -->
       <section v-if="pendingFiles.length > 0" class="file-tray">
         <div class="file-tray-header">
-          <span class="file-tray-title">待发送文件</span>
+          <span class="file-tray-title">{{ t("home.pendingFiles") }}</span>
           <span class="file-tray-count">{{ pendingFiles.length }}</span>
         </div>
         <div class="file-list">
@@ -440,10 +442,10 @@ const sendBtnLabel = computed(() => {
             <component :is="getFileIcon(file.name)" :size="16" class="file-icon" />
             <span class="file-name">{{ file.name }}</span>
             <span class="file-size">{{ formatSize(file.size) }}</span>
-            <button class="file-action" title="预览" @click="handlePreview(file)">
+            <button class="file-action" :title="t('home.preview')" @click="handlePreview(file)">
               <Eye :size="14" />
             </button>
-            <button class="file-action file-action--remove" title="移除" @click="removePendingFile(file.id)">
+            <button class="file-action file-action--remove" :title="t('home.remove')" @click="removePendingFile(file.id)">
               <X :size="14" />
             </button>
           </div>
@@ -469,15 +471,15 @@ const sendBtnLabel = computed(() => {
       <!-- Recent Transfers -->
       <section class="recent-section">
         <div class="section-header">
-          <span class="section-title">最近传输</span>
+          <span class="section-title">{{ t("home.recentTransfers") }}</span>
         </div>
         <div class="recent-table">
           <div class="recent-row recent-row--header">
-            <span>文件名</span>
-            <span>来源/目标</span>
-            <span>时间</span>
-            <span>大小</span>
-            <span>状态</span>
+            <span>{{ t("home.fileName") }}</span>
+            <span>{{ t("home.sourceTarget") }}</span>
+            <span>{{ t("home.time") }}</span>
+            <span>{{ t("home.size") }}</span>
+            <span>{{ t("home.status") }}</span>
           </div>
           <div v-for="item in recentTransfers" :key="item.id" class="recent-row">
             <span class="recent-filename">{{ item.fileName }}</span>
@@ -491,7 +493,7 @@ const sendBtnLabel = computed(() => {
             </span>
           </div>
           <div v-if="recentTransfers.length === 0" class="recent-empty">
-            暂无传输记录
+            {{ t("home.noTransfers") }}
           </div>
         </div>
       </section>

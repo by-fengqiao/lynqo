@@ -8,10 +8,12 @@ import { useMobileSessionStore } from "@/stores/mobileSession";
 import AppLogo from "../components/common/AppLogo.vue";
 import ReceiveRequestDialog from "@/components/overlays/ReceiveRequestDialog.vue";
 import { fetchHostStatus } from "../services/api";
+import { useLocale } from "@/i18n";
 
 const settingsStore = useSettingsStore();
 const mobileSession = useMobileSessionStore();
 const route = useRoute();
+const { t } = useLocale();
 const {
   connectionError,
   isReady,
@@ -21,15 +23,17 @@ const {
 } = storeToRefs(mobileSession);
 
 const showMenu = ref(false);
-const navItems = [
-  { name: "mobile-send", label: "发送文件", icon: Send },
-  { name: "mobile-transfers", label: "传输状态", icon: ArrowLeftRight },
-] as const;
-const hostName = ref("主机");
+const navItems = computed(() => [
+  { name: "mobile-send", label: t("mobile.send"), icon: Send },
+  { name: "mobile-transfers", label: t("mobile.transfers"), icon: ArrowLeftRight },
+] as const);
+const hostName = ref("");
 
 const connectionLabel = computed(() => {
-  if (connectionError.value) return "连接失败";
-  return isReady.value ? `已连接到 ${hostName.value}` : "正在连接…";
+  if (connectionError.value) return t("mobile.connectionFailed");
+  return isReady.value
+    ? t("mobile.connectedTo", { name: hostName.value || t("mobile.host") })
+    : t("mobile.connecting");
 });
 
 onMounted(async () => {
@@ -87,11 +91,11 @@ function closeMenu() {
       </div>
 
       <div class="topbar-right">
-        <button class="icon-btn" title="切换主题" @click="toggleTheme">
+        <button class="icon-btn" :title="t('mobile.toggleTheme')" @click="toggleTheme">
           <Sun v-if="settingsStore.getResolvedTheme() === 'dark'" :size="16" />
           <Moon v-else :size="16" />
         </button>
-        <button class="icon-btn" title="菜单" @click="toggleMenu">
+        <button class="icon-btn" :title="t('mobile.menu')" @click="toggleMenu">
           <Menu :size="16" />
         </button>
       </div>
@@ -99,8 +103,8 @@ function closeMenu() {
 
     <Teleport to="body">
       <div v-if="showMenu" class="mobile-menu-layer" @click.self="closeMenu">
-        <button class="menu-backdrop" aria-label="关闭导航菜单" @click="closeMenu" />
-        <nav class="mobile-menu" aria-label="手机导航">
+        <button class="menu-backdrop" :aria-label="t('mobile.closeMenu')" @click="closeMenu" />
+        <nav class="mobile-menu" :aria-label="t('mobile.navigation')">
           <RouterLink
             v-for="item in navItems"
             :key="item.name"

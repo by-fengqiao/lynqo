@@ -22,6 +22,7 @@ import { useAppStore } from "@/stores/app";
 import { isTauri, openReceiveFolder } from "@/services/tauri";
 import type { TransferTask } from "@/types";
 import TransferCenterFilterBar, { type TransferCenterFilter } from "@/components/transfers/TransferCenterFilterBar.vue";
+import { useLocale } from "@/i18n";
 
 const transfersStore = useTransfersStore();
 const devicesStore = useDevicesStore();
@@ -29,6 +30,7 @@ const settingsStore = useSettingsStore();
 const appStore = useAppStore();
 const route = useRoute();
 const router = useRouter();
+const { t } = useLocale();
 
 const expandedId = shallowRef<string | null>(null);
 const now = shallowRef(Date.now());
@@ -67,10 +69,10 @@ const filterCounts = computed<Record<TransferCenterFilter, number>>(() => ({
 
 const emptyStateText = computed(() => {
   const labels: Record<TransferCenterFilter, string> = {
-    all: "暂无传输记录",
-    active: "暂无进行中的传输",
-    completed: "暂无已完成的传输",
-    attention: "暂无需要处理的传输",
+    all: t("transfers.empty.all"),
+    active: t("transfers.empty.active"),
+    completed: t("transfers.empty.completed"),
+    attention: t("transfers.empty.attention"),
   };
   return labels[selectedFilter.value];
 });
@@ -129,7 +131,7 @@ function formatElapsed(task: TransferTask): string {
 }
 
 function getDeviceName(id: string): string {
-  if (id === "local") return "本机";
+  if (id === "local") return t("device.thisDevice");
   const device = devicesStore.devices.find((d) => d.id === id);
   return device?.name ?? id;
 }
@@ -144,11 +146,11 @@ function getFileIcon(name: string) {
 function getDirectionLabel(direction: string): string {
   switch (direction) {
     case "upload_to_host":
-      return "↑ 上传";
+      return t("transfers.upload");
     case "download_from_host":
-      return "↓ 下载";
+      return t("transfers.download");
     case "relay":
-      return "⟳ 中转";
+      return t("transfers.relay");
     default:
       return direction;
   }
@@ -158,23 +160,23 @@ function getRelayPath(task: TransferTask): string | null {
   if (task.direction !== "relay") return null;
   const source = getDeviceName(task.sourceDeviceId);
   const target = getDeviceName(task.targetDeviceId);
-  return `${source} → 主机 → ${target}`;
+  return `${source} → ${t("transfers.host")} → ${target}`;
 }
 
 function getStatusLabel(status: string): string {
   const map: Record<string, string> = {
-    transferring: "传输中",
-    verifying: "正在校验",
-    paused: "已暂停",
-    completed: "已完成",
-    waiting: "等待中",
-    requesting: "请求中",
-    awaiting_acceptance: "等待接收",
-    accepted: "已接受",
-    rejected: "已拒绝",
-    expired: "已过期",
-    cancelled: "已取消",
-    failed: "失败",
+    transferring: t("transfer.status.transferring"),
+    verifying: t("transfer.status.verifying"),
+    paused: t("transfer.status.paused"),
+    completed: t("transfer.status.completed"),
+    waiting: t("transfer.status.waiting"),
+    requesting: t("transfer.status.requesting"),
+    awaiting_acceptance: t("transfer.status.awaitingAcceptance"),
+    accepted: t("transfer.status.accepted"),
+    rejected: t("transfer.status.rejected"),
+    expired: t("transfer.status.expired"),
+    cancelled: t("transfer.status.cancelled"),
+    failed: t("transfer.status.failed"),
   };
   return map[status] ?? status;
 }
@@ -269,14 +271,14 @@ onUnmounted(() => {
     <!-- Title Section -->
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">传输中心</h1>
+        <h1 class="page-title">{{ t("transfers.title") }}</h1>
         <p class="page-subtitle">
-          {{ activeCount }} 个活跃传输 · 总速度 {{ totalSpeed }}
+          {{ t("transfers.summary", { count: activeCount, speed: totalSpeed }) }}
         </p>
       </div>
       <button class="outline-btn" @click="handleOpenReceiveFolder">
         <FolderOpen :size="15" />
-        打开接收文件夹
+        {{ t("received.openFolder") }}
       </button>
     </header>
 
@@ -290,15 +292,15 @@ onUnmounted(() => {
     <div class="table-card">
       <div class="table-header">
         <span class="col-icon"></span>
-        <span>文件</span>
-        <span>来源</span>
-        <span>目标</span>
-        <span>大小</span>
-        <span>进度</span>
-        <span>速度</span>
-        <span>剩余时间</span>
-        <span>状态</span>
-        <span>操作</span>
+        <span>{{ t("transfers.file") }}</span>
+        <span>{{ t("transfers.source") }}</span>
+        <span>{{ t("transfers.target") }}</span>
+        <span>{{ t("home.size") }}</span>
+        <span>{{ t("transfers.progress") }}</span>
+        <span>{{ t("transfers.speed") }}</span>
+        <span>{{ t("transfers.remaining") }}</span>
+        <span>{{ t("home.status") }}</span>
+        <span>{{ t("transfers.actions") }}</span>
       </div>
 
       <div class="table-body">
@@ -345,7 +347,7 @@ onUnmounted(() => {
             </span>
             <span class="col-speed">
               <span>{{ formatSpeed(task.speedBytesPerSecond) }}</span>
-              <span class="elapsed-time">已用 {{ formatElapsed(task) }}</span>
+              <span class="elapsed-time">{{ t("transfers.elapsed", { time: formatElapsed(task) }) }}</span>
             </span>
             <span class="col-remaining">{{ formatRemaining(task.remainingSeconds) }}</span>
             <span class="col-status">
@@ -360,19 +362,19 @@ onUnmounted(() => {
                 class="resume-btn"
                 @click="handleRetry(task.id)"
               >
-                重试
+                {{ t("transfers.retry") }}
               </button>
               <button
                 v-else-if="task.status === 'paused'"
                 class="resume-btn"
                 @click="handlePause(task)"
               >
-                继续
+                {{ t("transfers.resume") }}
               </button>
               <button
                 v-else-if="task.status === 'transferring'"
                 class="action-btn"
-                title="暂停"
+                :title="t('transfers.pause')"
                 @click="handlePause(task)"
               >
                 <Pause :size="14" />

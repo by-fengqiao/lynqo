@@ -1,21 +1,29 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { Sun, Moon, MonitorSmartphone, FolderOpen, ShieldCheck, FileText, Info } from "lucide-vue-next";
 import { useSettingsStore } from "@/stores/settings";
 import { useAppStore } from "@/stores/app";
 import { pickDirectory } from "@/services/tauri";
 import type { ThemeMode } from "@/types";
+import LanguageSelector from "@/components/settings/LanguageSelector.vue";
+import { useLocale, type Locale } from "@/i18n";
 
 const settingsStore = useSettingsStore();
 const appStore = useAppStore();
+const { locale, setLocale, t } = useLocale();
 
-const themeOptions: { value: ThemeMode; label: string; icon: typeof Sun }[] = [
-  { value: "light", label: "浅色", icon: Sun },
-  { value: "dark", label: "深色", icon: Moon },
-  { value: "system", label: "跟随系统", icon: MonitorSmartphone },
-];
+const themeOptions = computed<{ value: ThemeMode; label: string; icon: typeof Sun }[]>(() => [
+  { value: "light", label: t("theme.light"), icon: Sun },
+  { value: "dark", label: t("theme.dark"), icon: Moon },
+  { value: "system", label: t("theme.system"), icon: MonitorSmartphone },
+]);
 
 function selectTheme(mode: ThemeMode) {
   settingsStore.setThemeMode(mode);
+}
+
+function selectLocale(value: Locale) {
+  setLocale(value);
 }
 
 function toggleApproval() {
@@ -33,15 +41,19 @@ async function changeFolder() {
 <template>
   <div class="settings-page">
     <header class="page-header">
-      <h1 class="page-title">设置</h1>
+      <h1 class="page-title">{{ t("settings.title") }}</h1>
     </header>
 
     <div class="settings-card">
+      <LanguageSelector :model-value="locale" @update-model-value="selectLocale" />
+
+      <hr class="settings-divider" />
+
       <!-- Theme Section -->
       <section class="settings-section">
         <div class="section-header">
           <Sun :size="16" class="section-icon" />
-          <h2 class="section-title">主题</h2>
+          <h2 class="section-title">{{ t("theme.title") }}</h2>
         </div>
         <div class="theme-options">
           <label
@@ -70,11 +82,11 @@ async function changeFolder() {
       <section class="settings-section">
         <div class="section-header">
           <FolderOpen :size="16" class="section-icon" />
-          <h2 class="section-title">接收文件夹</h2>
+          <h2 class="section-title">{{ t("settings.receiveFolder") }}</h2>
         </div>
         <div class="folder-row">
           <code class="folder-path">{{ settingsStore.receiveFolder }}</code>
-          <button class="change-btn" @click="changeFolder">更改</button>
+          <button class="change-btn" @click="changeFolder">{{ t("settings.change") }}</button>
         </div>
       </section>
 
@@ -84,12 +96,12 @@ async function changeFolder() {
       <section class="settings-section">
         <div class="section-header">
           <ShieldCheck :size="16" class="section-icon" />
-          <h2 class="section-title">安全</h2>
+          <h2 class="section-title">{{ t("settings.security") }}</h2>
         </div>
         <div class="toggle-row">
           <div class="toggle-info">
-            <span class="toggle-label">接收前需要确认</span>
-            <span class="toggle-desc">其他设备发送文件时，需要本机确认后才开始接收。</span>
+            <span class="toggle-label">{{ t("settings.requireApproval") }}</span>
+            <span class="toggle-desc">{{ t("settings.requireApprovalDescription") }}</span>
           </div>
           <button
             class="toggle-switch"
@@ -109,15 +121,15 @@ async function changeFolder() {
       <section class="settings-section">
         <div class="section-header">
           <FileText :size="16" class="section-icon" />
-          <h2 class="section-title">开源许可与协议</h2>
+          <h2 class="section-title">{{ t("settings.legal") }}</h2>
         </div>
         <p class="legal-description">
-          LYNQO 按 GPL-3.0-only 开源发布。安装包附带完整许可证；局域网传输前请了解隐私、使用规则和风险说明。
+          {{ t("settings.legalDescription") }}
         </p>
-        <nav class="legal-links" aria-label="开源许可与协议">
-          <RouterLink to="/legal/terms">使用协议</RouterLink>
-          <RouterLink to="/legal/privacy">隐私说明</RouterLink>
-          <RouterLink to="/legal/disclaimer">免责声明</RouterLink>
+        <nav class="legal-links" :aria-label="t('settings.legal')">
+          <RouterLink to="/legal/terms">{{ t("settings.terms") }}</RouterLink>
+          <RouterLink to="/legal/privacy">{{ t("settings.privacy") }}</RouterLink>
+          <RouterLink to="/legal/disclaimer">{{ t("settings.disclaimer") }}</RouterLink>
         </nav>
       </section>
 
@@ -127,31 +139,31 @@ async function changeFolder() {
       <section class="settings-section">
         <div class="section-header">
           <Info :size="16" class="section-icon" />
-          <h2 class="section-title">关于</h2>
+          <h2 class="section-title">{{ t("settings.about") }}</h2>
         </div>
         <div class="about-grid">
           <div class="about-item">
-            <span class="about-label">应用名称</span>
+            <span class="about-label">{{ t("settings.appName") }}</span>
             <span class="about-value">LYNQO</span>
           </div>
           <div class="about-item">
-            <span class="about-label">版本</span>
+            <span class="about-label">{{ t("settings.version") }}</span>
             <span class="about-value">{{ appStore.appVersion }}</span>
           </div>
           <div class="about-item">
-            <span class="about-label">设备名称</span>
+            <span class="about-label">{{ t("settings.deviceName") }}</span>
             <span class="about-value">{{ appStore.deviceName }}</span>
           </div>
           <div class="about-item">
-            <span class="about-label">网络</span>
+            <span class="about-label">{{ t("settings.network") }}</span>
             <span class="about-value">{{ appStore.networkName }}</span>
           </div>
           <div class="about-item">
-            <span class="about-label">本机 IP</span>
+            <span class="about-label">{{ t("settings.localIp") }}</span>
             <span class="about-value">{{ appStore.localIp }}</span>
           </div>
           <div class="about-item">
-            <span class="about-label">连接码</span>
+            <span class="about-label">{{ t("settings.connectionCode") }}</span>
             <span class="about-value about-value--mono">{{ appStore.connectionToken }}</span>
           </div>
         </div>

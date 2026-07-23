@@ -9,11 +9,13 @@ import { isTauri, openReceiveFolder } from "./services/tauri";
 import { useLegalConsent } from "./composables/useLegalConsent";
 import ToastHost from "./components/overlays/ToastHost.vue";
 import LegalConsentDialog from "./components/legal/LegalConsentDialog.vue";
+import { useLocale } from "./i18n";
 
 const settingsStore = useSettingsStore();
 const appStore = useAppStore();
 const router = useRouter();
 const isDesktopApp = isTauri();
+const { t } = useLocale();
 const {
   status: legalConsentStatus,
   accept: acceptLegalConsent,
@@ -66,8 +68,8 @@ onUnmounted(() => {
 
 <template>
   <div v-if="appStore.connectionLost" class="reconnect-banner">
-    <span>与服务器的连接已断开，实时进度已暂停。</span>
-    <button class="reconnect-btn" @click="appStore.manualReconnect()">重新连接</button>
+    <span>{{ t("app.connectionLost") }}</span>
+    <button class="reconnect-btn" @click="appStore.manualReconnect()">{{ t("app.reconnect") }}</button>
   </div>
   <router-view />
   <ToastHost />

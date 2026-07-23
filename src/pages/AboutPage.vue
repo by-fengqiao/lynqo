@@ -3,9 +3,11 @@ import { useRouter } from "vue-router";
 import { ArrowLeft, BookOpen, Shield } from "lucide-vue-next";
 import AppLogo from "../components/common/AppLogo.vue";
 import { useAppStore } from "@/stores/app";
+import { useLocale } from "@/i18n";
 
 const router = useRouter();
 const appStore = useAppStore();
+const { t } = useLocale();
 
 function goBack() {
   router.back();
@@ -23,7 +25,7 @@ const thirdPartyLibs = [
   <div class="about-page">
     <button class="back-btn" @click="goBack">
       <ArrowLeft :size="16" />
-      <span>返回</span>
+      <span>{{ t("about.back") }}</span>
     </button>
 
     <div class="about-card">
@@ -37,25 +39,25 @@ const thirdPartyLibs = [
       </div>
 
       <!-- Description -->
-      <p class="app-desc">连接附近，自由传输</p>
+      <p class="app-desc">{{ t("about.tagline") }}</p>
       <p class="app-tagline">CONNECT NEARBY. TRANSFER FREELY.</p>
 
       <div class="about-links">
         <RouterLink to="/help" class="about-link">
           <BookOpen :size="14" />
-          <span>使用帮助</span>
+          <span>{{ t("about.help") }}</span>
         </RouterLink>
         <RouterLink to="/legal/privacy" class="about-link">
           <Shield :size="14" />
-          <span>隐私说明</span>
+          <span>{{ t("settings.privacy") }}</span>
         </RouterLink>
-        <RouterLink to="/legal/terms" class="about-link">使用协议</RouterLink>
-        <RouterLink to="/legal/disclaimer" class="about-link">免责声明</RouterLink>
+        <RouterLink to="/legal/terms" class="about-link">{{ t("settings.terms") }}</RouterLink>
+        <RouterLink to="/legal/disclaimer" class="about-link">{{ t("settings.disclaimer") }}</RouterLink>
       </div>
 
       <!-- Third-party credits -->
       <div class="about-credits">
-        <h3 class="credits-title">第三方组件</h3>
+        <h3 class="credits-title">{{ t("about.thirdParty") }}</h3>
         <div class="credits-list">
           <a
             v-for="lib in thirdPartyLibs"
@@ -73,7 +75,7 @@ const thirdPartyLibs = [
 
       <!-- Privacy note -->
       <p class="privacy-note">
-        文件仅在局域网设备之间传输，不会上传到任何服务器。
+        {{ t("about.privacyNote") }}
       </p>
     </div>
   </div>

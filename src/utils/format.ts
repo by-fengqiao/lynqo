@@ -1,5 +1,6 @@
 // 设备图标与平台显示文案
 import type { Device, Platform, DeviceType } from "@/types";
+import { getCurrentLocale } from "@/i18n";
 
 export function platformLabel(platform: Platform): string {
   switch (platform) {
@@ -19,15 +20,16 @@ export function platformLabel(platform: Platform): string {
 }
 
 export function deviceTypeLabel(t: DeviceType): string {
+  const isEnglish = getCurrentLocale() === "en-US";
   switch (t) {
     case "desktop":
-      return "台式机";
+      return isEnglish ? "Desktop" : "台式机";
     case "laptop":
-      return "笔记本";
+      return isEnglish ? "Laptop" : "笔记本";
     case "phone":
-      return "手机";
+      return isEnglish ? "Phone" : "手机";
     case "tablet":
-      return "平板";
+      return isEnglish ? "Tablet" : "平板";
     default:
       return "—";
   }
@@ -55,27 +57,30 @@ export function formatSpeed(bytesPerSec: number): string {
 
 // 剩余时间格式化
 export function formatRemaining(seconds?: number): string {
+  const isEnglish = getCurrentLocale() === "en-US";
   if (seconds == null || !Number.isFinite(seconds)) return "—";
-  if (seconds <= 0) return "0 秒";
-  if (seconds < 60) return `${Math.ceil(seconds)} 秒`;
+  if (seconds <= 0) return isEnglish ? "0 sec" : "0 秒";
+  if (seconds < 60) return isEnglish ? `${Math.ceil(seconds)} sec` : `${Math.ceil(seconds)} 秒`;
   const m = Math.floor(seconds / 60);
   const s = Math.ceil(seconds % 60);
+  if (isEnglish) return `${m}:${String(s).padStart(2, "0")}`;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
 // 相对时间
 export function formatRelativeTime(iso: string, now: Date = new Date()): string {
+  const isEnglish = getCurrentLocale() === "en-US";
   const t = new Date(iso).getTime();
   if (Number.isNaN(t)) return "—";
   const diff = now.getTime() - t;
   const sec = Math.floor(diff / 1000);
-  if (sec < 60) return "刚刚";
+  if (sec < 60) return isEnglish ? "Just now" : "刚刚";
   const min = Math.floor(sec / 60);
-  if (min < 60) return `${min} 分钟前`;
+  if (min < 60) return isEnglish ? `${min} min ago` : `${min} 分钟前`;
   const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} 小时前`;
+  if (hr < 24) return isEnglish ? `${hr} hr ago` : `${hr} 小时前`;
   const day = Math.floor(hr / 24);
-  return `${day} 天前`;
+  return isEnglish ? `${day} day${day === 1 ? "" : "s"} ago` : `${day} 天前`;
 }
 
 // HH:MM:SS 或 m:ss
@@ -89,7 +94,7 @@ export function formatClock(iso?: string): string {
 
 // 设备显示名优先级：name > hostName
 export function deviceDisplayName(d: Pick<Device, "name">): string {
-  return d.name || "未知设备";
+  return d.name || (getCurrentLocale() === "en-US" ? "Unknown device" : "未知设备");
 }
 
 // Generates a transient client-side ID before the server assigns its own ID.

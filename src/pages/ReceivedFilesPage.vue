@@ -7,11 +7,13 @@ import { useDevicesStore } from "@/stores/devices";
 import { useAppStore } from "@/stores/app";
 import { isTauri, openReceiveFolder } from "@/services/tauri";
 import { formatBytes } from "@/utils/format";
+import { useLocale } from "@/i18n";
 
 const settingsStore = useSettingsStore();
 const transfersStore = useTransfersStore();
 const devicesStore = useDevicesStore();
 const appStore = useAppStore();
+const { t } = useLocale();
 
 interface ReceivedFile {
   id: string;
@@ -22,7 +24,7 @@ interface ReceivedFile {
 }
 
 function deviceName(id: string): string {
-  if (id === "local") return "本机";
+  if (id === "local") return t("device.thisDevice");
   return devicesStore.devices.find((d) => d.id === id)?.name ?? id;
 }
 
@@ -49,12 +51,12 @@ const receivedFiles = computed<ReceivedFile[]>(() => {
           new Date(b.completedAt ?? b.createdAt).getTime() -
           new Date(a.completedAt ?? a.createdAt).getTime()
       )
-      .map((t) => ({
-        id: t.id,
-        name: t.files[0]?.name ?? "未命名文件",
-        size: formatBytes(t.totalBytes),
-        date: formatDateTime(t.completedAt ?? t.createdAt),
-        source: deviceName(t.sourceDeviceId),
+      .map((transfer) => ({
+        id: transfer.id,
+        name: transfer.files[0]?.name ?? t("received.unnamed"),
+        size: formatBytes(transfer.totalBytes),
+        date: formatDateTime(transfer.completedAt ?? transfer.createdAt),
+        source: deviceName(transfer.sourceDeviceId),
       }));
   }
   return [];
@@ -62,14 +64,14 @@ const receivedFiles = computed<ReceivedFile[]>(() => {
 
 async function handleOpenReceiveFolder() {
   if (!isTauri()) {
-    appStore.pushToast("info", "仅桌面端支持", "请在桌面应用中打开接收文件夹");
+    appStore.pushToast("info", t("received.desktopOnly"), t("received.desktopOnlyDescription"));
     return;
   }
   try {
     await openReceiveFolder();
   } catch (err) {
     console.error("[received] Failed to open receive folder:", err);
-    appStore.pushToast("error", "打开失败", "无法打开接收文件夹");
+    appStore.pushToast("error", t("received.openFailed"), t("received.openFailedDescription"));
   }
 }
 
@@ -89,18 +91,18 @@ onMounted(() => {
   <div class="received-page">
     <header class="page-header">
       <div class="header-left">
-        <h1 class="page-title">接收文件</h1>
+        <h1 class="page-title">{{ t("received.title") }}</h1>
         <p class="page-subtitle">{{ settingsStore.receiveFolder }}</p>
       </div>
       <button class="outline-btn" @click="handleOpenReceiveFolder">
         <FolderOpen :size="15" />
-        打开接收文件夹
+        {{ t("received.openFolder") }}
       </button>
     </header>
 
     <div class="received-card">
       <div v-if="receivedFiles.length === 0" class="received-empty">
-        暂无接收的文件
+        {{ t("received.empty") }}
       </div>
       <div
         v-for="file in receivedFiles"
@@ -110,7 +112,7 @@ onMounted(() => {
         <component :is="getFileIcon(file.name)" :size="18" class="received-icon" />
         <div class="received-info">
           <span class="received-name">{{ file.name }}</span>
-          <span class="received-meta">来自 {{ file.source }}</span>
+          <span class="received-meta">{{ t("received.from", { name: file.source }) }}</span>
         </div>
         <div class="received-right">
           <span class="received-size">{{ file.size }}</span>
