@@ -31,7 +31,7 @@ jobs:
         include:
           - name: macOS Intel
             platform: macos
-            os: macos-13
+            os: macos-14
             rust_target: x86_64-apple-darwin
             bundles: dmg
             assets: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
