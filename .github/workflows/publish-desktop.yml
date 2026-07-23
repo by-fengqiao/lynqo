@@ -8,6 +8,15 @@ on:
         required: true
         default: v26.1.4
         type: string
+      platform:
+        description: Platform group to build
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - macos
+          - linux
 
 permissions:
   contents: write
@@ -21,16 +30,19 @@ jobs:
       matrix:
         include:
           - name: macOS Intel
+            platform: macos
             os: macos-13
             rust_target: x86_64-apple-darwin
             bundles: dmg
             assets: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
           - name: macOS Apple Silicon
+            platform: macos
             os: macos-14
             rust_target: aarch64-apple-darwin
             bundles: dmg
             assets: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           - name: Linux x64
+            platform: linux
             os: ubuntu-22.04
             rust_target: x86_64-unknown-linux-gnu
             bundles: appimage,deb
@@ -38,22 +50,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        if: inputs.platform == 'all' || inputs.platform == matrix.platform
 
       - uses: actions/setup-node@v4
+        if: inputs.platform == 'all' || inputs.platform == matrix.platform
         with:
           node-version: 20
           cache: npm
 
       - name: Install frontend dependencies
+        if: inputs.platform == 'all' || inputs.platform == matrix.platform
         run: npm ci
 
       - name: Install Rust
+        if: inputs.platform == 'all' || inputs.platform == matrix.platform
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_target }}
 
       - name: Install Linux build dependencies
-        if: runner.os == 'Linux'
+        if: (inputs.platform == 'all' || inputs.platform == matrix.platform) && runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -67,9 +83,11 @@ jobs:
             patchelf
 
       - name: Build installers
+        if: inputs.platform == 'all' || inputs.platform == matrix.platform
         run: npx tauri build --target ${{ matrix.rust_target }} --bundles ${{ matrix.bundles }}
 
       - name: Attach installers to the existing Release
+        if: inputs.platform == 'all' || inputs.platform == matrix.platform
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
