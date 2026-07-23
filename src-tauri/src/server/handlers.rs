@@ -1369,7 +1369,8 @@ pub async fn cancel_transfer(
     } else {
         let receive_path = PathBuf::from(&receive_folder);
         for file_record in &files {
-            let temp_path = transfer::temp_file_path(&receive_path, &transfer_id, &file_record.name);
+            let temp_path =
+                transfer::temp_file_path(&receive_path, &transfer_id, &file_record.name);
             if temp_path.exists() {
                 if let Err(e) = tokio::fs::remove_file(&temp_path).await {
                     tracing::error!("Failed to remove temp file {}: {}", temp_path.display(), e);
@@ -1461,11 +1462,7 @@ pub async fn list_transfers(
         } else {
             0.0
         };
-        let telemetry = s
-            .transfer_telemetry
-            .get(&t.id)
-            .cloned()
-            .unwrap_or_default();
+        let telemetry = s.transfer_telemetry.get(&t.id).cloned().unwrap_or_default();
 
         transfer_list.push(json!({
             "id": t.id,

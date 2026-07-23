@@ -2,7 +2,7 @@
 name = "lynqo"
 version = "26.1.4"
 description = "LYNQO - LAN file transfer"
-authors = ["you"]
+authors = ["Map1eBr1dge"]
 license = "GPL-3.0-only"
 edition = "2021"
 

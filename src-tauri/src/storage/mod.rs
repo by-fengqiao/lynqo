@@ -579,11 +579,12 @@ impl Database {
             .lock()
             .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
 
-        let updated = conn.execute(
-            "UPDATE devices SET approved = ?1, trusted = ?2 WHERE id = ?3",
-            params![approved as i32, trusted as i32, id],
-        )
-        .map_err(|e| AppError::Database(format!("Update device failed: {}", e)))?;
+        let updated = conn
+            .execute(
+                "UPDATE devices SET approved = ?1, trusted = ?2 WHERE id = ?3",
+                params![approved as i32, trusted as i32, id],
+            )
+            .map_err(|e| AppError::Database(format!("Update device failed: {}", e)))?;
 
         if updated == 0 {
             return Err(AppError::DeviceNotFound);
@@ -1664,7 +1665,8 @@ mod tests {
     #[test]
     fn trusted_access_persists_and_can_be_revoked() {
         let db = Database::open(&test_db_path("trusted-access")).unwrap();
-        db.insert_device(&device("phone", false, false, "1")).unwrap();
+        db.insert_device(&device("phone", false, false, "1"))
+            .unwrap();
 
         db.set_device_access("phone", true, true).unwrap();
         let trusted = db.get_device_by_id("phone").unwrap().unwrap();

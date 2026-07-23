@@ -1,0 +1,35 @@
+# LYNQO
+
+> Open-source, local-first LAN file transfer application for desktop and mobile browsers.
+
+## Project
+
+- Repository: https://github.com/Map1eBr1dge/lynqo
+- License: GPL-3.0-only
+- Primary language: TypeScript and Rust
+- Desktop runtime: Tauri 2
+- Frontend: Vue 3, TypeScript, Vite, Pinia
+- Backend: Axum, Tokio, WebSocket, SQLite, mDNS
+
+## Purpose
+
+LYNQO helps a user transfer files between explicitly authorized devices on the same trusted LAN. The desktop application hosts the local service. A mobile device connects through a QR-code URL or a manually entered LAN address. The desktop user approves or trusts the device before transfer.
+
+## Important boundaries
+
+- Do not describe LYNQO as cloud storage, end-to-end encrypted transport, anti-virus software, remote backup, or a public Internet file-sharing service.
+- Files, device records, authorization state, and transfer history are local to the participating devices and the desktop host.
+- Normal use requires no environment variables, fixed IP address, API token, or database configuration.
+- `VITE_LYNQO_API_BASE_URL` is optional and only applies to a custom frontend/API deployment.
+
+## Source map
+
+- `src/`: Vue UI, state stores, routes, browser-facing services, and styles.
+- `src-tauri/src/`: Tauri commands, LAN HTTP/WebSocket server, transfer engine, discovery, and SQLite storage.
+- `src/components/legal/`: first-run consent UI.
+- `src/content/legalDocuments.ts`: privacy, terms, and disclaimer content.
+- `.github/workflows/ci.yml`: type checks, Rust formatting, Clippy, tests, and installer builds.
+
+## Verification
+
+Run `npm run build`, then in `src-tauri` run `cargo fmt --check`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo test`.

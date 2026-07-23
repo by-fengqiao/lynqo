@@ -82,8 +82,8 @@ pub async fn send_files_to_device(
 
     for path_str in &file_paths {
         let path = std::path::Path::new(path_str);
-        let metadata = std::fs::metadata(path)
-            .map_err(|e| format!("无法读取文件“{}”：{}", path_str, e))?;
+        let metadata =
+            std::fs::metadata(path).map_err(|e| format!("无法读取文件“{}”：{}", path_str, e))?;
 
         if !metadata.is_file() {
             return Err(format!("“{}”不是普通文件。", path_str));
@@ -204,8 +204,14 @@ pub async fn send_files_to_device(
         for (file_id, path) in checksum_jobs {
             match crate::transfer::compute_sha256(std::path::Path::new(&path)).await {
                 Ok(checksum) => {
-                    if let Err(error) = checksum_db.update_transfer_file_checksum(&file_id, &checksum) {
-                        tracing::warn!("Failed to store source checksum for {}: {}", file_id, error);
+                    if let Err(error) =
+                        checksum_db.update_transfer_file_checksum(&file_id, &checksum)
+                    {
+                        tracing::warn!(
+                            "Failed to store source checksum for {}: {}",
+                            file_id,
+                            error
+                        );
                         continue;
                     }
                     let _ = checksum_events.send(WsEvent::TransferChecksumReady {
@@ -214,7 +220,11 @@ pub async fn send_files_to_device(
                         checksum,
                     });
                 }
-                Err(error) => tracing::warn!("Failed to calculate source checksum for {}: {}", path, error),
+                Err(error) => tracing::warn!(
+                    "Failed to calculate source checksum for {}: {}",
+                    path,
+                    error
+                ),
             }
         }
     });

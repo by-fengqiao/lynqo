@@ -206,6 +206,27 @@ async fn handle_socket(
     tracing::info!("WebSocket connection closed");
 }
 
+/// Transfer invitations must only be delivered to their selected target. Other
+/// lifecycle events remain visible to the desktop control channel.
+fn should_deliver_event(event: &WsEvent, device_id: Option<&str>) -> bool {
+    // The desktop control channel can observe lifecycle events. A mobile
+    // browser only needs an invitation explicitly addressed to its device;
+    // suppressing every other broadcast avoids leaking another device's
+    // transfer names, sizes, or progress.
+    match (event, device_id) {
+        (_, None) => true,
+        (
+            WsEvent::TransferRequested {
+                target_device_id, ..
+            },
+            Some(id),
+        ) => id == target_device_id,
+        (WsEvent::DeviceApproved { device_id, .. }, Some(id)) => id == device_id,
+        (WsEvent::DeviceRejected { device_id, .. }, Some(id)) => id == device_id,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{add_device_connection, device_session_event, remove_device_connection};
@@ -247,26 +268,5 @@ mod tests {
         assert_eq!(payload["type"], "device.approval_required");
         assert_eq!(payload["payload"]["deviceId"], "device-1");
         assert_eq!(payload["payload"]["name"], "Android Device");
-    }
-}
-
-/// Transfer invitations must only be delivered to their selected target. Other
-/// lifecycle events remain visible to the desktop control channel.
-fn should_deliver_event(event: &WsEvent, device_id: Option<&str>) -> bool {
-    // The desktop control channel can observe lifecycle events. A mobile
-    // browser only needs an invitation explicitly addressed to its device;
-    // suppressing every other broadcast avoids leaking another device's
-    // transfer names, sizes, or progress.
-    match (event, device_id) {
-        (_, None) => true,
-        (
-            WsEvent::TransferRequested {
-                target_device_id, ..
-            },
-            Some(id),
-        ) => id == target_device_id,
-        (WsEvent::DeviceApproved { device_id, .. }, Some(id)) => id == device_id,
-        (WsEvent::DeviceRejected { device_id, .. }, Some(id)) => id == device_id,
-        _ => false,
     }
 }

@@ -327,7 +327,10 @@ pub async fn start_server(state: SharedState, frontend_dir: String) -> Result<()
             axum::routing::post(handlers::register_device),
         )
         .route("/api/devices", axum::routing::get(handlers::list_devices))
-        .route("/api/devices/me", axum::routing::get(handlers::get_current_device))
+        .route(
+            "/api/devices/me",
+            axum::routing::get(handlers::get_current_device),
+        )
         .route(
             "/api/devices/me/transfers/pending",
             axum::routing::get(handlers::get_pending_transfers),
