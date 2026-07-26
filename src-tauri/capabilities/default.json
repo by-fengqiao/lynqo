@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities for LYNQO",
+  "description": "Default capabilities for LanNook",
   "windows": ["main"],
   "permissions": [
     "core:default",

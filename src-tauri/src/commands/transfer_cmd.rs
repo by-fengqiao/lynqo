@@ -114,7 +114,7 @@ pub async fn send_files_to_device(
     }
     if !s.connected_devices.contains_key(&target_device_id) {
         return Err(format!(
-            "{} 已离线，请保持手机上的 LYNQO 页面打开后重试。",
+            "{} 已离线，请保持手机上的 LanNook 页面打开后重试。",
             target.name
         ));
     }

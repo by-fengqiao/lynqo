@@ -591,7 +591,7 @@ pub async fn start_server(state: SharedState, frontend_dir: String) -> Result<()
             .unwrap_or_else(|| "Local Network".to_string());
     }
 
-    tracing::info!("LYNQO server started on {}", addr);
+    tracing::info!("LanNook server started on {}", addr);
 
     // Run the server
     let server_result = axum::serve(
@@ -785,7 +785,7 @@ mod tests {
         let occupied = tokio::net::TcpListener::bind(("0.0.0.0", 0)).await.unwrap();
         let port = occupied.local_addr().unwrap().port();
         let database_path = std::env::temp_dir().join(format!(
-            "lynqo-server-bind-failure-{}.sqlite",
+            "lannook-server-bind-failure-{}.sqlite",
             uuid::Uuid::new_v4()
         ));
         let database = std::sync::Arc::new(Database::open(&database_path).unwrap());

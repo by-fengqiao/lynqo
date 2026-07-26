@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-LYNQO uses the following open-source libraries. We are grateful to their authors and contributors.
+LanNook uses the following open-source libraries. We are grateful to their authors and contributors.
 
 ## Vue
 

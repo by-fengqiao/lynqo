@@ -167,7 +167,7 @@ pub async fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String>
     let autostart_enabled = autostart.is_enabled().unwrap_or(false);
 
     let report = format!(
-        r#"LYNQO Diagnostics Report
+        r#"LanNook Diagnostics Report
 ========================
 Generated: {}
 
@@ -254,38 +254,10 @@ pub async fn open_log_dir() -> Result<CommandResult, String> {
 
 /// Get the config file path for storing preferences.
 fn get_config_path() -> std::path::PathBuf {
-    let base = if cfg!(target_os = "windows") {
-        std::env::var("APPDATA")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::var("USERPROFILE")
-                    .map(|p| std::path::PathBuf::from(p).join("AppData").join("Roaming"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            })
-    } else {
-        std::env::var("HOME")
-            .map(|p| std::path::PathBuf::from(p).join(".config"))
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-    };
-
-    base.join("LYNQO").join("config.json")
+    crate::get_app_data_dir().join("config.json")
 }
 
 /// Get the database path (for diagnostics).
 fn get_db_path_for_diag() -> std::path::PathBuf {
-    let base = if cfg!(target_os = "windows") {
-        std::env::var("APPDATA")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::var("USERPROFILE")
-                    .map(|p| std::path::PathBuf::from(p).join("AppData").join("Roaming"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            })
-    } else {
-        std::env::var("HOME")
-            .map(|p| std::path::PathBuf::from(p).join(".config"))
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-    };
-
-    base.join("LYNQO").join("lynqo.db")
+    crate::get_db_path()
 }

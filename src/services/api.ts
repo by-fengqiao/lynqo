@@ -1,7 +1,9 @@
-// CONFIG_REQUIRED: VITE_LYNQO_API_BASE_URL
+// CONFIG_REQUIRED: VITE_LANNOOK_API_BASE_URL
 // Leave unset for the normal paired-LAN flow, which uses the page's current
-// origin. Set it only when this web client is intentionally hosted elsewhere.
-const configuredApiBase = import.meta.env.VITE_LYNQO_API_BASE_URL?.trim();
+// origin. VITE_LYNQO_API_BASE_URL is read only as a legacy fallback.
+const configuredApiBase =
+  import.meta.env.VITE_LANNOOK_API_BASE_URL?.trim() ||
+  import.meta.env.VITE_LYNQO_API_BASE_URL?.trim();
 const runtimeOrigin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
 const BASE = configuredApiBase?.replace(/\/+$/, "") || runtimeOrigin;
 

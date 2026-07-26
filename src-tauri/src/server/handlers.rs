@@ -2275,7 +2275,7 @@ pub async fn create_relay(
     }
     if !target_online {
         return Err(AppError::Internal(
-            "Target device is offline. Keep its LYNQO page open and try again.".to_string(),
+            "Target device is offline. Keep its LanNook page open and try again.".to_string(),
         ));
     }
 

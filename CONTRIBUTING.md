@@ -1,18 +1,18 @@
 # 贡献指南
 
-感谢你愿意改进 LYNQO。无论是复现 Bug、补充文档、编写测试还是提交功能补丁，都是有价值的贡献。
+感谢你愿意改进 LanNook。无论是复现 Bug、补充文档、编写测试还是提交功能补丁，都是有价值的贡献。
 
 ## 开始前
 
 1. 阅读 [README.md](README.md)，确认项目目标和安全边界。
-2. 在 [Issues](https://github.com/by-fengqiao/lynqo/issues) 搜索已有问题；若没有，请先提交一个包含复现步骤的新 Issue。
+2. 在 [Issues](https://github.com/by-fengqiao/lannook/issues) 搜索已有问题；若没有，请先提交一个包含复现步骤的新 Issue。
 3. 对较大的功能改动，先在 Issue 中说明目标、交互和边界，避免重复实现或偏离产品方向。
 
 ## 本地开发
 
 ```bash
-git clone https://github.com/by-fengqiao/lynqo.git
-cd lynqo
+git clone https://github.com/by-fengqiao/lannook.git
+cd lannook
 npm ci
 npm run tauri dev
 ```

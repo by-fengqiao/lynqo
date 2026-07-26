@@ -105,7 +105,7 @@ pub async fn compute_sha256(path: &Path) -> Result<String, std::io::Error> {
     Ok(format!("{:x}", result))
 }
 
-/// Default receive folder path: ~/Downloads/LYNQO
+/// Default receive folder path: ~/Downloads/LanNook
 pub fn default_receive_folder() -> PathBuf {
     let base = if cfg!(target_os = "windows") {
         std::env::var("USERPROFILE").ok().map(PathBuf::from)
@@ -114,7 +114,7 @@ pub fn default_receive_folder() -> PathBuf {
     };
 
     match base {
-        Some(home) => home.join("Downloads").join("LYNQO"),
+        Some(home) => home.join("Downloads").join("LanNook"),
         None => PathBuf::from("./received"),
     }
 }
@@ -134,7 +134,7 @@ pub fn ensure_receive_folder(path: &Path) -> Result<(), AppError> {
     }
 
     // Verify writability by attempting to create and remove a temp file
-    let test_file = path.join(".lynqo_write_test");
+    let test_file = path.join(".lannook_write_test");
     std::fs::write(&test_file, b"test").map_err(AppError::Io)?;
     std::fs::remove_file(&test_file).map_err(AppError::Io)?;
 
@@ -148,14 +148,14 @@ pub fn ensure_receive_folder(path: &Path) -> Result<(), AppError> {
 /// directory prevents data corruption and makes cancellation safe.
 pub fn temp_file_path(receive_folder: &Path, transfer_id: &str, filename: &str) -> PathBuf {
     receive_folder
-        .join(".lynqo-tmp")
+        .join(".lannook-tmp")
         .join(transfer_id)
         .join(format!(".{}.uploading", filename))
 }
 
 /// Return the isolated directory containing temporary files for a transfer.
 pub fn temp_transfer_dir(receive_folder: &Path, transfer_id: &str) -> PathBuf {
-    receive_folder.join(".lynqo-tmp").join(transfer_id)
+    receive_folder.join(".lannook-tmp").join(transfer_id)
 }
 
 #[cfg(test)]
@@ -176,11 +176,11 @@ mod tests {
         assert_ne!(first, second);
         assert_eq!(
             first,
-            PathBuf::from("C:/receive/.lynqo-tmp/transfer-a/.photo.jpg.uploading")
+            PathBuf::from("C:/receive/.lannook-tmp/transfer-a/.photo.jpg.uploading")
         );
         assert_eq!(
             temp_transfer_dir(receive, "transfer-a"),
-            PathBuf::from("C:/receive/.lynqo-tmp/transfer-a")
+            PathBuf::from("C:/receive/.lannook-tmp/transfer-a")
         );
     }
 

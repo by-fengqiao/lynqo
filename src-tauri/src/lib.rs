@@ -6,6 +6,7 @@ pub mod storage;
 pub mod transfer;
 
 use server::SharedState;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use storage::Database;
 use tauri::{
@@ -15,12 +16,22 @@ use tauri::{
 };
 use tokio::sync::Mutex;
 
+const APP_DATA_DIR_NAME: &str = "LanNook";
+const LEGACY_APP_DATA_DIR_NAME: &str = "LYNQO";
+const DATABASE_FILE_NAME: &str = "lannook.db";
+const LEGACY_DATABASE_FILE_NAME: &str = "lynqo.db";
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Migrate before SQLite or the log appender opens any file. The old
+    // application identifier remains for updater compatibility, but user data
+    // lives under the new product name from this release onward.
+    let _ = get_app_data_dir();
+
     // Keep the non-blocking guard alive for the entire application lifetime;
     // otherwise buffered log writes can be dropped when the function returns.
     let log_dir = get_log_dir();
-    let file_appender = tracing_appender::rolling::daily(&log_dir, "lynqo.log");
+    let file_appender = tracing_appender::rolling::daily(&log_dir, "lannook.log");
     let (non_blocking, _file_log_guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::fmt()
@@ -68,7 +79,7 @@ pub fn run() {
             });
 
             // Build tray menu
-            let show_item = MenuItem::with_id(app, "show", "打开 LYNQO", true, None::<&str>)?;
+            let show_item = MenuItem::with_id(app, "show", "打开 LanNook", true, None::<&str>)?;
             let start_item =
                 MenuItem::with_id(app, "start_service", "开始局域网服务", true, None::<&str>)?;
             let stop_item =
@@ -100,7 +111,7 @@ pub fn run() {
                     tauri::Error::AssetNotFound("default application icon".into())
                 })?)
                 .menu(&menu)
-                .tooltip("LYNQO — 连接附近，自由传输")
+                .tooltip("LanNook — 连接附近，自由传输")
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "show" => {
                         if let Some(window) = app.get_webview_window("main") {
@@ -201,44 +212,151 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
-/// Get the database file path in the app data directory
-fn get_db_path() -> std::path::PathBuf {
-    let base = if cfg!(target_os = "windows") {
+fn app_data_base_dir() -> PathBuf {
+    if cfg!(target_os = "windows") {
         std::env::var("APPDATA")
-            .map(std::path::PathBuf::from)
+            .map(PathBuf::from)
             .unwrap_or_else(|_| {
                 std::env::var("USERPROFILE")
-                    .map(|p| std::path::PathBuf::from(p).join("AppData").join("Roaming"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                    .map(|p| PathBuf::from(p).join("AppData").join("Roaming"))
+                    .unwrap_or_else(|_| PathBuf::from("."))
             })
     } else {
         std::env::var("HOME")
-            .map(|p| std::path::PathBuf::from(p).join(".config"))
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-    };
+            .map(|p| PathBuf::from(p).join(".config"))
+            .unwrap_or_else(|_| PathBuf::from("."))
+    }
+}
 
-    let app_dir = base.join("LYNQO");
-    std::fs::create_dir_all(&app_dir).ok();
-    app_dir.join("lynqo.db")
+fn move_legacy_entry(legacy: &Path, current: &Path, legacy_name: &str, current_name: &str) -> bool {
+    let source = legacy.join(legacy_name);
+    let target = current.join(current_name);
+    if !source.exists() || target.exists() {
+        return false;
+    }
+
+    if let Err(error) = std::fs::rename(&source, &target) {
+        // The old data stays untouched when a migration cannot complete. The
+        // application can still start with a new empty store instead of risking
+        // a partial copy or destructive overwrite.
+        eprintln!(
+            "Could not migrate legacy LYNQO data from {} to {}: {}",
+            source.display(),
+            target.display(),
+            error
+        );
+        false
+    } else {
+        true
+    }
+}
+
+fn migrate_legacy_app_data_at(base: &Path) {
+    let legacy = base.join(LEGACY_APP_DATA_DIR_NAME);
+    if !legacy.exists() {
+        return;
+    }
+
+    let current = base.join(APP_DATA_DIR_NAME);
+    if let Err(error) = std::fs::create_dir_all(&current) {
+        eprintln!(
+            "Could not create LanNook data directory {}: {}",
+            current.display(),
+            error
+        );
+        return;
+    }
+
+    if move_legacy_entry(
+        &legacy,
+        &current,
+        LEGACY_DATABASE_FILE_NAME,
+        DATABASE_FILE_NAME,
+    ) {
+        move_legacy_entry(&legacy, &current, "lynqo.db-wal", "lannook.db-wal");
+        move_legacy_entry(&legacy, &current, "lynqo.db-shm", "lannook.db-shm");
+    }
+    move_legacy_entry(&legacy, &current, "config.json", "config.json");
+    move_legacy_entry(&legacy, &current, "logs", "logs");
+}
+
+/// Returns the product data directory and migrates data from the legacy
+/// LYNQO directory when this is the first LanNook launch.
+pub fn get_app_data_dir() -> PathBuf {
+    let base = app_data_base_dir();
+    migrate_legacy_app_data_at(&base);
+
+    let app_dir = base.join(APP_DATA_DIR_NAME);
+    if let Err(error) = std::fs::create_dir_all(&app_dir) {
+        eprintln!(
+            "Could not create LanNook data directory {}: {}",
+            app_dir.display(),
+            error
+        );
+    }
+    app_dir
+}
+
+/// Get the database file path in the app data directory.
+pub fn get_db_path() -> PathBuf {
+    get_app_data_dir().join(DATABASE_FILE_NAME)
 }
 
 /// Get the log directory path
-pub fn get_log_dir() -> std::path::PathBuf {
-    let base = if cfg!(target_os = "windows") {
-        std::env::var("APPDATA")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|_| {
-                std::env::var("USERPROFILE")
-                    .map(|p| std::path::PathBuf::from(p).join("AppData").join("Roaming"))
-                    .unwrap_or_else(|_| std::path::PathBuf::from("."))
-            })
-    } else {
-        std::env::var("HOME")
-            .map(|p| std::path::PathBuf::from(p).join(".config"))
-            .unwrap_or_else(|_| std::path::PathBuf::from("."))
-    };
-
-    let log_dir = base.join("LYNQO").join("logs");
+pub fn get_log_dir() -> PathBuf {
+    let log_dir = get_app_data_dir().join("logs");
     std::fs::create_dir_all(&log_dir).ok();
     log_dir
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn temporary_base_dir() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after UNIX epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("lannook-migration-{unique}"))
+    }
+
+    #[test]
+    fn migrates_legacy_data_without_overwriting_new_files() {
+        let base = temporary_base_dir();
+        let legacy = base.join(LEGACY_APP_DATA_DIR_NAME);
+        std::fs::create_dir_all(legacy.join("logs")).expect("create legacy directory");
+        std::fs::write(legacy.join(LEGACY_DATABASE_FILE_NAME), "legacy-db")
+            .expect("write legacy database");
+        std::fs::write(legacy.join("config.json"), "{\"close_behavior\":\"quit\"}")
+            .expect("write legacy config");
+        std::fs::write(legacy.join("logs").join("lynqo.log"), "legacy-log")
+            .expect("write legacy log");
+
+        migrate_legacy_app_data_at(&base);
+
+        let current = base.join(APP_DATA_DIR_NAME);
+        assert_eq!(
+            std::fs::read_to_string(current.join(DATABASE_FILE_NAME)).expect("read migrated db"),
+            "legacy-db"
+        );
+        assert_eq!(
+            std::fs::read_to_string(current.join("config.json")).expect("read migrated config"),
+            "{\"close_behavior\":\"quit\"}"
+        );
+        assert!(current.join("logs").join("lynqo.log").exists());
+
+        std::fs::write(current.join(DATABASE_FILE_NAME), "new-db").expect("write new db");
+        std::fs::write(legacy.join(LEGACY_DATABASE_FILE_NAME), "older-db")
+            .expect("write second legacy database");
+        migrate_legacy_app_data_at(&base);
+        assert_eq!(
+            std::fs::read_to_string(current.join(DATABASE_FILE_NAME)).expect("read preserved db"),
+            "new-db"
+        );
+        assert!(legacy.join(LEGACY_DATABASE_FILE_NAME).exists());
+
+        std::fs::remove_dir_all(base).expect("remove temporary migration directory");
+    }
 }

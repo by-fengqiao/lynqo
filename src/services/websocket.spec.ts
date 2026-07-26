@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { LynqoWebSocket, type WsMessage } from "./websocket";
+import { LanNookWebSocket, type WsMessage } from "./websocket";
 
 class FakeWebSocket {
   static readonly CONNECTING = 0;
@@ -32,7 +32,7 @@ class FakeWebSocket {
   }
 }
 
-describe("LynqoWebSocket", () => {
+describe("LanNookWebSocket", () => {
   beforeEach(() => {
     FakeWebSocket.instances = [];
     vi.useFakeTimers();
@@ -45,7 +45,7 @@ describe("LynqoWebSocket", () => {
   });
 
   it("replaces an open socket when its token URL changes", () => {
-    const client = new LynqoWebSocket();
+    const client = new LanNookWebSocket();
     client.connect("ws://host/ws?token=first");
     FakeWebSocket.instances[0].open();
 
@@ -58,7 +58,7 @@ describe("LynqoWebSocket", () => {
   });
 
   it("announces reconnecting as soon as a live socket closes", () => {
-    const client = new LynqoWebSocket();
+    const client = new LanNookWebSocket();
     const states: string[] = [];
     client.on("connection.state", (message: WsMessage) => {
       if (typeof message.payload?.state === "string") states.push(message.payload.state);
@@ -73,7 +73,7 @@ describe("LynqoWebSocket", () => {
   });
 
   it("does not create a ghost reconnect after an intentional close", () => {
-    const client = new LynqoWebSocket();
+    const client = new LanNookWebSocket();
     client.connect("ws://host/ws?token=session");
     FakeWebSocket.instances[0].open();
     client.disconnect();

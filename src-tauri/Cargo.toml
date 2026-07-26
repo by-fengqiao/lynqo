@@ -1,13 +1,13 @@
 [package]
-name = "lynqo"
-version = "26.1.7"
-description = "LYNQO - LAN file transfer"
+name = "lannook"
+version = "26.2.0"
+description = "LanNook - LAN file transfer"
 authors = ["Map1eBr1dge"]
 license = "GPL-3.0-only"
 edition = "2021"
 
 [lib]
-name = "lynqo_lib"
+name = "lannook_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

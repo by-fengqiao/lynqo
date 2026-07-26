@@ -17,7 +17,7 @@ withDefaults(
     :width="size"
     :height="size"
     class="app-logo"
-    alt="LYNQO"
+    alt="LanNook"
   />
 </template>
 

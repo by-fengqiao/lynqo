@@ -2,14 +2,16 @@
 import { computed, shallowRef } from "vue";
 import { Check, Monitor, QrCode, Send, X } from "lucide-vue-next";
 import { useLocale } from "@/i18n";
+import { readAndMigrateLocalStorageValue } from "@/utils/storage";
 
-const STORAGE_KEY = "lynqo.first-launch-guide.v1";
+const STORAGE_KEY = "lannook.first-launch-guide.v1";
+const LEGACY_STORAGE_KEYS = ["lynqo.first-launch-guide.v1"] as const;
 const { locale, setLocale, t } = useLocale();
 const visible = shallowRef(readDismissed() === false);
 
 function readDismissed(): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_KEY) === "done";
+    return readAndMigrateLocalStorageValue(STORAGE_KEY, LEGACY_STORAGE_KEYS) === "done";
   } catch {
     return false;
   }

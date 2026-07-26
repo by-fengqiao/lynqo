@@ -10,7 +10,7 @@ into production.
 FAKE_DATA_BACKUP = {
     "MOCK_LOCAL_RECEIVE_FOLDER": {
         "business_meaning": "A previous frontend startup default that exposed a specific developer Windows path before persisted settings loaded.",
-        "value": r"C:\Users\fengqiao\Downloads\LYNQO",
+        "value": r"C:\Users\fengqiao\Downloads\LanNook",
     },
     "LEGACY_MOBILE_DEVICE_NAME_PLACEHOLDERS": {
         "business_meaning": "Retired page-local browser names that were not derived from the actual device model or stable device identity.",

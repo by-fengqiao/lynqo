@@ -12,7 +12,7 @@ export type WsConnectionState =
 
 type Listener = (msg: WsMessage) => void;
 
-export class LynqoWebSocket {
+export class LanNookWebSocket {
   private ws: WebSocket | null = null;
   private listeners = new Map<string, Set<Listener>>();
   private url = "";
@@ -166,4 +166,4 @@ export class LynqoWebSocket {
   }
 }
 
-export const wsClient = new LynqoWebSocket();
+export const wsClient = new LanNookWebSocket();

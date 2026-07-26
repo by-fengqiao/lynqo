@@ -192,7 +192,7 @@ async function changeFolder() {
         <div class="about-grid">
           <div class="about-item">
             <span class="about-label">{{ t("settings.appName") }}</span>
-            <span class="about-value">LYNQO</span>
+            <span class="about-value">LanNook</span>
           </div>
           <div class="about-item">
             <span class="about-label">{{ t("settings.version") }}</span>

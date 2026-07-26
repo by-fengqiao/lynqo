@@ -20,7 +20,7 @@ export const useAppStore = defineStore("app", () => {
   const trayReady = ref(isTauri());
   const networkName = ref<AppState["networkName"]>("本地网络");
   const localIp = ref<AppState["localIp"]>("");
-  const deviceName = ref<AppState["deviceName"]>("LYNQO");
+  const deviceName = ref<AppState["deviceName"]>("LanNook");
   const connectionToken = ref<AppState["connectionToken"]>("");
   const appVersion = ref("—");
 

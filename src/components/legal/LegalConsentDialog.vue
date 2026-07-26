@@ -47,7 +47,7 @@ const documentTabs = [
         </header>
 
         <p class="consent-intro">
-          LYNQO 是 GPL-3.0-only 开源的局域网文件传输工具。文件会在你授权的设备和本机目录之间流转；请仅在可信网络中使用，并自行备份重要文件。
+          LanNook 是 GPL-3.0-only 开源的局域网文件传输工具。文件会在你授权的设备和本机目录之间流转；请仅在可信网络中使用，并自行备份重要文件。
         </p>
 
         <div class="document-tabs" role="tablist" aria-label="协议文件">
@@ -92,7 +92,7 @@ const documentTabs = [
           <button class="decline-button" type="button" @click="emit('decline')">我不同意</button>
           <button class="accept-button" type="button" :disabled="!hasReviewed" @click="emit('accept')">
             <Check :size="16" />
-            同意并进入 LYNQO
+            同意并进入 LanNook
           </button>
         </footer>
       </template>

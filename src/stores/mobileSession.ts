@@ -11,6 +11,7 @@ import {
 } from "@/services/api";
 import { wsClient } from "@/services/websocket";
 import { translate } from "@/i18n";
+import { readAndMigrateLocalStorageValue } from "@/utils/storage";
 
 export interface IncomingTransfer {
   id: string;
@@ -36,7 +37,8 @@ interface RegistrationResponse {
   approved?: boolean;
 }
 
-const MOBILE_CLIENT_ID_KEY = "lynqo-mobile-client-id";
+const MOBILE_CLIENT_ID_KEY = "lannook-mobile-client-id";
+const LEGACY_MOBILE_CLIENT_ID_KEYS = ["lynqo-mobile-client-id"] as const;
 let transientClientIdSequence = 0;
 let transientClientId: string | null = null;
 
@@ -115,7 +117,10 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
 
   function getStableClientId(): string {
     try {
-      const existing = window.localStorage.getItem(MOBILE_CLIENT_ID_KEY);
+      const existing = readAndMigrateLocalStorageValue(
+        MOBILE_CLIENT_ID_KEY,
+        LEGACY_MOBILE_CLIENT_ID_KEYS
+      );
       if (existing && existing.length >= 16) return existing;
 
       const generated = createClientId();

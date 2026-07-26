@@ -1,13 +1,20 @@
 import { shallowRef } from "vue";
+import { readAndMigrateLocalStorageValue } from "@/utils/storage";
 
 export type LegalConsentStatus = "pending" | "accepted" | "declined";
 
 export const LEGAL_CONSENT_VERSION = "2026-07-23";
-const LEGAL_CONSENT_STORAGE_KEY = "lynqo.legal-consent-version";
+const LEGAL_CONSENT_STORAGE_KEY = "lannook.legal-consent-version";
+const LEGACY_LEGAL_CONSENT_STORAGE_KEYS = ["lynqo.legal-consent-version"] as const;
 
 function hasAcceptedCurrentVersion(): boolean {
   try {
-    return window.localStorage.getItem(LEGAL_CONSENT_STORAGE_KEY) === LEGAL_CONSENT_VERSION;
+    return (
+      readAndMigrateLocalStorageValue(
+        LEGAL_CONSENT_STORAGE_KEY,
+        LEGACY_LEGAL_CONSENT_STORAGE_KEYS
+      ) === LEGAL_CONSENT_VERSION
+    );
   } catch {
     // Storage can be unavailable in a restricted WebView. Keep the notice visible.
     return false;

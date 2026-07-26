@@ -1,8 +1,8 @@
 {
-  "name": "lynqo",
+  "name": "lannook",
   "author": "Map1eBr1dge",
   "private": true,
-  "version": "26.1.7",
+  "version": "26.2.0",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {

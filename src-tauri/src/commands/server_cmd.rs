@@ -4,7 +4,8 @@ use tauri::{Manager, State};
 use crate::server::{self, ServiceStatus, SharedState};
 
 #[cfg(target_os = "windows")]
-const WINDOWS_FIREWALL_RULE_NAME: &str = "LYNQO LAN File Transfer";
+const WINDOWS_FIREWALL_RULE_NAME: &str = "LanNook LAN File Transfer";
+const LEGACY_WINDOWS_FIREWALL_RULE_NAME: &str = "LYNQO LAN File Transfer";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -117,12 +118,13 @@ fn inspect_windows_firewall(port: u16) -> String {
         Err(_) => return "unknown".to_string(),
     };
     let rule_name = powershell_literal(WINDOWS_FIREWALL_RULE_NAME);
+    let legacy_rule_name = powershell_literal(LEGACY_WINDOWS_FIREWALL_RULE_NAME);
     let script = format!(
         r#"$ErrorActionPreference = 'Stop'
 $activeProfiles = @(Get-NetFirewallProfile | Where-Object {{ $_.Enabled }})
 if ($activeProfiles.Count -eq 0) {{ Write-Output 'disabled'; exit 0 }}
 $target = '{executable}'
-$rules = @(Get-NetFirewallRule -DisplayName '{rule_name}' -ErrorAction SilentlyContinue | Where-Object {{ $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' }})
+$rules = @(Get-NetFirewallRule -ErrorAction SilentlyContinue | Where-Object {{ ($_.DisplayName -eq '{rule_name}' -or $_.DisplayName -eq '{legacy_rule_name}') -and $_.Enabled -eq 'True' -and $_.Direction -eq 'Inbound' -and $_.Action -eq 'Allow' }})
 foreach ($rule in $rules) {{
   $application = Get-NetFirewallApplicationFilter -AssociatedNetFirewallRule $rule
   $portFilter = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule

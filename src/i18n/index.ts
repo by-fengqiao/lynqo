@@ -1,12 +1,14 @@
 import { readonly, shallowRef } from "vue";
 import { messages, type Locale } from "./messages";
+import { readAndMigrateLocalStorageValue } from "@/utils/storage";
 
-const storageKey = "lynqo.locale";
+const storageKey = "lannook.locale";
+const legacyStorageKeys = ["lynqo.locale"] as const;
 const supportedLocales: Locale[] = ["zh-CN", "en-US"];
 
 function readStoredLocale(): Locale {
   if (typeof window === "undefined") return "zh-CN";
-  const stored = window.localStorage.getItem(storageKey);
+  const stored = readAndMigrateLocalStorageValue(storageKey, legacyStorageKeys);
   if (supportedLocales.includes(stored as Locale)) return stored as Locale;
   const browserLocale = window.navigator.languages?.[0] ?? window.navigator.language;
   return browserLocale?.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";

@@ -26,7 +26,7 @@ pub fn safe_host_label(device_name: &str) -> String {
     }
     let safe_name = safe_name.trim_matches('-');
     let base = if safe_name.is_empty() {
-        "lynqo-device"
+        "lannook-device"
     } else {
         safe_name
     };
@@ -37,7 +37,7 @@ pub fn safe_host_label(device_name: &str) -> String {
     );
     // DNS labels are limited to 63 octets. The slug is ASCII, so truncating
     // by characters is also byte-safe. A stable suffix prevents non-ASCII
-    // names from all collapsing to the same `lynqo-device` label.
+    // names from all collapsing to the same `lannook-device` label.
     let max_base_len = 63 - 1 - suffix.len();
     let base = base
         .chars()
@@ -49,10 +49,10 @@ pub fn safe_host_label(device_name: &str) -> String {
 }
 
 impl MdnsGuard {
-    /// Register a LYNQO service on the LAN via mDNS/DNS-SD.
+    /// Register a LanNook service on the LAN via mDNS/DNS-SD.
     ///
-    /// - Service type: `_lynqo._tcp.local.`
-    /// - Instance: `{device_name}._lynqo._tcp.local.`
+    /// - Service type: `_lannook._tcp.local.`
+    /// - Instance: `{device_name}._lannook._tcp.local.`
     /// - Host: `{device_name}.local.`
     /// - Properties: version=1.0
     ///
@@ -64,7 +64,7 @@ impl MdnsGuard {
 
         let safe_name = safe_host_label(device_name);
 
-        let service_type = "_lynqo._tcp.local.";
+        let service_type = "_lannook._tcp.local.";
         let instance_name = format!("{}.{}", safe_name, service_type);
         let host_name = format!("{}.local.", safe_name);
 
@@ -130,9 +130,9 @@ mod tests {
         let ascii = safe_host_label("Feng Qiao's PC");
         assert!(ascii.starts_with("feng-qiao-s-pc-"));
         assert_eq!(ascii, safe_host_label("Feng Qiao's PC"));
-        assert!(safe_host_label("  ").starts_with("lynqo-device-"));
+        assert!(safe_host_label("  ").starts_with("lannook-device-"));
         assert_ne!(safe_host_label("风桥"), safe_host_label("林桥"));
         assert!(safe_host_label(&"a".repeat(200)).len() <= 63);
-        assert!(safe_host_label("LYNQO-01").starts_with("lynqo-01-"));
+        assert!(safe_host_label("LanNook-01").starts_with("lannook-01-"));
     }
 }

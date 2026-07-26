@@ -161,12 +161,12 @@ impl Default for Settings {
 fn hostname() -> String {
     std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "LYNQO Device".to_string())
+        .unwrap_or_else(|_| "LanNook Device".to_string())
 }
 
 fn default_receive_folder_string() -> String {
     dirs_download()
-        .map(|p| p.join("LYNQO").to_string_lossy().to_string())
+        .map(|p| p.join("LanNook").to_string_lossy().to_string())
         .unwrap_or_else(|| "./received".to_string())
 }
 
@@ -1854,7 +1854,7 @@ mod tests {
 
     fn test_db_path(label: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
-            "lynqo-storage-{}-{}.sqlite",
+            "lannook-storage-{}-{}.sqlite",
             label,
             uuid::Uuid::new_v4()
         ))

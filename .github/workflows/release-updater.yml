@@ -79,7 +79,7 @@ jobs:
         with:
           projectPath: .
           tagName: ${{ env.RELEASE_TAG }}
-          releaseName: LYNQO ${{ env.RELEASE_TAG }}
+          releaseName: LanNook ${{ env.RELEASE_TAG }}
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
