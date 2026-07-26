@@ -5,13 +5,13 @@
 ## 开始前
 
 1. 阅读 [README.md](README.md)，确认项目目标和安全边界。
-2. 在 [Issues](https://github.com/Map1eBr1dge/lynqo/issues) 搜索已有问题；若没有，请先提交一个包含复现步骤的新 Issue。
+2. 在 [Issues](https://github.com/by-fengqiao/lynqo/issues) 搜索已有问题；若没有，请先提交一个包含复现步骤的新 Issue。
 3. 对较大的功能改动，先在 Issue 中说明目标、交互和边界，避免重复实现或偏离产品方向。
 
 ## 本地开发
 
 ```bash
-git clone https://github.com/Map1eBr1dge/lynqo.git
+git clone https://github.com/by-fengqiao/lynqo.git
 cd lynqo
 npm ci
 npm run tauri dev

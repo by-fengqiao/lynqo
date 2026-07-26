@@ -4,7 +4,7 @@
 
 ## Project
 
-- Repository: https://github.com/Map1eBr1dge/lynqo
+- Repository: https://github.com/by-fengqiao/lynqo
 - License: GPL-3.0-only
 - Primary language: TypeScript and Rust
 - Desktop runtime: Tauri 2

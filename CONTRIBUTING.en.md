@@ -5,13 +5,13 @@ Thank you for improving LYNQO. Reproducible bug reports, documentation updates, 
 ## Before you start
 
 1. Read the [README](README.en.md) to understand the product goal and security boundaries.
-2. Search [Issues](https://github.com/Map1eBr1dge/lynqo/issues) before opening a new one. If no matching report exists, include reproducible steps in a new issue.
+2. Search [Issues](https://github.com/by-fengqiao/lynqo/issues) before opening a new one. If no matching report exists, include reproducible steps in a new issue.
 3. For a substantial feature, first describe the goal, interaction, and scope in an issue. This avoids duplicate work and keeps the project focused.
 
 ## Local development
 
 ```bash
-git clone https://github.com/Map1eBr1dge/lynqo.git
+git clone https://github.com/by-fengqiao/lynqo.git
 cd lynqo
 npm ci
 npm run tauri dev

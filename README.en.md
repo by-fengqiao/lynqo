@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/128x128.png" width="96" alt="LYNQO app icon" />
+  <img src="src-tauri/icons/128x128@2x.png" width="96" alt="LYNQO app icon" />
 </p>
 
 <h1 align="center">LYNQO</h1>
@@ -9,60 +9,79 @@
 </p>
 
 <p align="center">
-  <strong>Connect nearby. Transfer freely.</strong><br />
-  An open-source, cross-device file transfer tool for trusted local networks.
+  Move files between a phone browser and a computer on the same LAN.<br />
+  No mobile app and no account required.
 </p>
 
 <p align="center">
+  <a href="https://github.com/by-fengqiao/lynqo/releases/latest"><img src="https://img.shields.io/github/v/release/by-fengqiao/lynqo?display_name=tag&sort=semver" alt="Latest release" /></a>
   <a href="https://github.com/by-fengqiao/lynqo/actions/workflows/ci.yml"><img src="https://github.com/by-fengqiao/lynqo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-4a32c5.svg" alt="GPL-3.0-only" /></a>
-  <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" alt="Tauri v2" />
-  <img src="https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white" alt="Vue 3" />
 </p>
 
-## What problem does it solve?
+LYNQO is for a specific, ordinary task: a file is on your phone or a nearby computer, and you want it on the other device without sending it through a cloud drive. The desktop app provides a QR code and LAN address. Open that page on a phone, approve the device on the desktop by default, and either side can start a transfer. Official builds do not upload file contents to a public cloud.
 
-Moving files between a phone and a computer often means signing in to a cloud drive, installing multiple clients, accepting rate limits, or handing sensitive files to a third-party server. LYNQO keeps transfers on the current LAN between devices that you explicitly authorize: start the service on a desktop computer, scan the connection address from a phone, approve the device on the desktop, then send or receive files in either direction.
+The current release is intended for trusted local networks and has no public relay or internet-transfer mode. Its mobile connection uses LAN HTTP and WebSocket without TLS or end-to-end encryption. Read the [security boundaries](#security-boundaries) before using it.
 
-LYNQO is not cloud storage, remote backup, content moderation, or anti-virus software. Back up important files yourself, and verify unknown files before opening them.
+## Download
 
-## ✨ Highlights
+Get the desktop installer from the [latest Release](https://github.com/by-fengqiao/lynqo/releases/latest). Phones and tablets open the QR-code address in a browser and do not need a separate client.
 
-- **QR connection with desktop approval** — a mobile browser requests access after scanning a connection address; the desktop user can approve once or trust the device.
-- **Two-way transfer** — send files from a phone to a desktop or accept desktop-initiated transfers on a phone. The user always chooses the files and target device.
-- **One transfer center** — see active, completed, failed, and pending transfers in one place.
-- **Live status and integrity checks** — progress, speed, remaining time, and a short verification fingerprint are available; expand it to view the full SHA-256 value.
-- **Local-first data** — device records, authorization state, and transfer history stay on the desktop host. Files are not uploaded to a public cloud.
-- **Open and auditable** — LYNQO is released under GPL-3.0-only. Anyone who redistributes a modified or binary version must comply with the same license and corresponding-source requirements.
+| Desktop system | Download | Notes |
+| --- | --- | --- |
+| Windows 10/11 x64 | `LYNQO_*_x64-setup.exe` | Recommended per-user installer |
+| Windows 10/11 x64 | `LYNQO_*_x64_en-US.msi` | For MSI or managed deployment |
+| macOS 10.15+, Apple silicon | `LYNQO_*_aarch64.dmg` | M1, M2, M3, M4, and later Apple chips |
+| macOS 10.15+, Intel | `LYNQO_*_x64.dmg` | Intel Macs |
+| Linux x64 | `LYNQO_*_amd64.AppImage` or `LYNQO_*_amd64.deb` | AppImage is portable; deb targets Debian/Ubuntu |
 
-## 🔄 How it works
+There are currently no Windows ARM, Windows 32-bit, or Linux ARM packages. Releases are also not yet protected by Windows Authenticode signing or Apple notarization, so the operating system may show an unknown-publisher warning. Download only from this repository's Release page. The `.sig` files attached to a Release authenticate application updates; they are not operating-system code signatures.
 
-```mermaid
-flowchart LR
-  Desktop[LYNQO on desktop] -->|shows LAN URL or QR code| Phone[Mobile browser]
-  Phone -->|requests access| Desktop
-  Desktop -->|explicit approval or trust| Phone
-  Phone <-->|LAN file transfer and live status| Desktop
-  Desktop -->|receive directory and history| Local[(Local storage)]
-```
+## First use
 
-1. Start LYNQO on the desktop and confirm that its status says it is running.
-2. Select **Connect device**, then scan the QR code from a phone or enter the complete LAN address in the phone browser.
-3. When the desktop shows an authorization request, verify the device and network, then choose **Approve** or **Trust device**.
-4. Choose files and a target device on either side. Follow live progress and results in the **Transfer Center**.
+1. Start LYNQO on the computer and confirm that the top bar says the service is running.
+2. Select **Connect device**, then scan the QR code with a phone. You can also enter the full address shown in the panel.
+3. By default, a request from a new device appears on the desktop home screen. Approve it for the current service session, or select **Trust this device** before approving it. Trust can be revoked from the Devices page.
+4. Choose files and a target on either device. The Transfer Center shows progress, speed, remaining time, and the final result.
 
-> Do not enter `localhost` or `127.0.0.1` on a phone: those addresses point to the phone itself, not the desktop. Use LYNQO only on the same trusted, non-isolated LAN.
+When one phone sends to another, the file is uploaded to the computer running LYNQO and then downloaded by the target phone. This is not a direct phone-to-phone P2P path.
 
-## 🚀 Quick start
+## What works today
 
-### Prerequisites
+- The mobile interface runs in a modern browser and needs no separate installation. Language switching is available, although a few mobile prompts still need English translations.
+- File transfer works in both directions between a phone and the desktop. The desktop supports file selection and drag-and-drop.
+- One Transfer Center shows pending, active, completed, and paused work, plus errors from the current session.
+- Uploads use 512 KiB chunks and retry a failed chunk automatically. Cross-session resume and continuing a failed task are still being completed.
+- Both interfaces receive live progress, smoothed speed, and estimated time remaining. The desktop Transfer Center currently shows a SHA-256 value and shorter fingerprint for the first file, for manual comparison.
+- Device, approval, and transfer records are stored in a local SQLite database. The desktop receive folder is configurable.
+- Connection tools expose address selection, mDNS state, a listener self-check, and Windows Firewall diagnostics.
+- Desktop integration includes a tray icon, launch at login, and configurable close behavior: quit, hide to tray, or ask.
+- The About page can check for and install releases signed with the project's updater key.
 
-- Node.js 20 or later
-- Rust stable toolchain
-- The Tauri build dependencies for your platform; Windows commonly needs MSVC Build Tools and WebView2
-- A desktop computer and at least one mobile device on the same LAN
+## If the phone cannot open the address
 
-### Run from source
+Being connected to Wi-Fi with the same name does not always mean that two devices may talk to each other. If the page times out or no approval request appears on the desktop, check these in order:
+
+1. Do not enter `localhost` or `127.0.0.1` on the phone. They point back to the phone. Use the full address from the **Connect device** panel.
+2. Guest Wi-Fi, campus and corporate networks, and routers with AP isolation can block traffic between clients. Try a normal home network or a computer hotspot.
+3. Disable cloud acceleration, VPN, proxy, or data-saving features in the phone browser. They may not route private addresses such as `192.168.x.x`.
+4. On Windows, use a Private network profile. If diagnostics report a missing firewall rule, LYNQO can ask for confirmation before adding a rule scoped to the current executable, TCP port, and local subnet.
+5. If the computer has a router connection, hotspot, VPN, or virtual adapter at the same time, select the address that shares a network with the phone. The default port is `53317`; after changing it, trust the value currently shown by the panel.
+
+The panel's local self-check proves that the service is listening on the selected desktop address. It cannot prove that the complete phone-to-computer network path is open; the final test must come from the phone.
+
+## Security boundaries
+
+- New devices require desktop approval by default, but this setting can be disabled. With approval disabled, a device that has a valid connection address may connect immediately.
+- One-time approval lasts for the current LAN service run. A trusted-device record persists until it is revoked or removed on the Devices page.
+- The QR-code URL contains pairing data. Do not post the QR code or complete URL to an untrusted chat, website, or public display.
+- The mobile path currently uses plain LAN HTTP and WebSocket. It is not protected by TLS or end-to-end encryption, so use it only on a network you trust and control.
+- Official desktop builds keep device records, approvals, transfer history, and received files on the computer and do not use a public-cloud file relay by default. A custom frontend or API gateway can change that data path and must be assessed separately.
+- SHA-256 currently provides a fingerprint for manual comparison; LYNQO does not automatically prove that both endpoints hold identical files. It also says nothing about whether a file is safe. LYNQO is not cloud storage, remote backup, content moderation, or anti-virus software.
+
+## Run from source
+
+You need Node.js 20.x or 22+, Rust stable, and the [Tauri 2 prerequisites](https://v2.tauri.app/start/prerequisites/) for your platform. CI uses Node.js 20. Windows normally also needs MSVC Build Tools and WebView2.
 
 ```bash
 git clone https://github.com/by-fengqiao/lynqo.git
@@ -71,85 +90,43 @@ npm ci
 npm run tauri dev
 ```
 
-The installer displays the GPL-3.0 license. On first desktop launch, LYNQO also asks the user to read and acknowledge its terms, privacy notice, and risk notice.
+The ordinary QR-code workflow does not need an `.env` file. `VITE_LYNQO_API_BASE_URL` is optional and only applies when the frontend is placed behind a custom API gateway; see [.env.example](.env.example). It changes only the REST API base. The gateway must also proxy the `/ws` WebSocket path on the frontend origin.
 
-### Build an installer
+Build installers for the current platform with:
 
 ```bash
 npm run tauri build
 ```
 
-On Windows, the NSIS installer is written to:
-
-```text
-src-tauri/target/release/bundle/nsis/
-```
-
-Download published installers from [Releases](https://github.com/by-fengqiao/lynqo/releases). The publishing workflow can provide Windows (`.exe` / `.msi`), macOS (`.dmg` for Intel and Apple Silicon), and Linux x64 (`.AppImage` / `.deb`) installers. macOS and Linux packages are built by GitHub Actions on their respective operating systems.
-
-### Zero-configuration default
-
-Normal use needs no `.env` file, fixed IP address, token, database address, or operator details. After a device scans the QR code, the web client uses the current connection address to reach the desktop host.
-
-Only set this optional value when deploying the frontend behind a custom API gateway:
+## Verify a change
 
 ```bash
-VITE_LYNQO_API_BASE_URL=https://your-gateway.example
-```
-
-## 🛠️ Technology
-
-| Area | Technology |
-| --- | --- |
-| Desktop application | Tauri 2, Rust |
-| Frontend | Vue 3, TypeScript, Vite, Pinia |
-| LAN service | Axum, Tokio, WebSocket, mDNS |
-| Local data | SQLite |
-| File transfer | Chunked transfer, resumable transfer, SHA-256 verification |
-
-## 🧪 Verification and quality
-
-```bash
-# Frontend type check and production build
+npm run test
 npm run build
 
-# Rust formatting, static analysis, and tests
 cd src-tauri
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
-cargo test
 ```
 
-GitHub Actions runs these checks for pushes to `main` and for pull requests, then builds Windows and macOS installer artifacts. To publish macOS and Linux packages, manually run `Publish Desktop Installers` in Actions with an existing Release tag; it attaches Intel/Apple Silicon macOS and Linux x64 installers directly to that Release.
+## Repository map
 
-## 🧭 Project structure
+| Path | Contents |
+| --- | --- |
+| `src/` | Vue UI, routes, stores, and browser-side transfer logic |
+| `src-tauri/src/` | Rust commands, LAN service, transfers, discovery, and local storage |
+| `src-tauri/icons/` | Application and platform icon assets |
+| `.github/workflows/` | Checks, cross-platform builds, and updater-manifest publishing |
 
-```text
-src/                 Vue UI, routes, stores, and browser-facing services
-src-tauri/src/       Rust commands, LAN service, transfer engine, and local storage
-src-tauri/icons/     Desktop and mobile icon assets
-.github/workflows/   Continuous integration and cross-platform builds
-```
+## Contributing
 
-## 🤝 Contributing
+Before opening an issue, search the existing [Issues](https://github.com/by-fengqiao/lynqo/issues). A useful report includes the operating-system version, network setup, reproduction steps, and connection diagnostics. See the [Contribution Guide](CONTRIBUTING.en.md) for code submissions or the [中文贡献指南](CONTRIBUTING.md).
 
-Bug reports with reproducible steps, documentation improvements, tests, and focused feature patches are welcome.
+- [v26.1.7 release notes](docs/releases/v26.1.7.md)
+- Created and maintained by [by-fengqiao](https://github.com/by-fengqiao)
 
-1. Search [Issues](https://github.com/by-fengqiao/lynqo/issues) before opening a new report.
-2. Fork the repository and create a topic branch from `main`.
-3. Run the verification commands before opening a pull request.
-4. Explain the problem, the change, and the verification evidence in the pull request.
-
-Read the full [Contribution Guide (English)](CONTRIBUTING.en.md) or [贡献指南（简体中文）](CONTRIBUTING.md).
-
-## 👤 Author and further information
-
-- Maintainer: [by-fengqiao](https://github.com/by-fengqiao)
-- Project home: [github.com/by-fengqiao/lynqo](https://github.com/by-fengqiao/lynqo)
-- In-app documentation: **Settings → Open-source license and agreements**
-
-## 📄 License
+## License
 
 Copyright (C) 2026 LYNQO contributors.
 
-LYNQO is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for third-party licenses.
+LYNQO is licensed under the [GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) summarizes the licenses of several major dependencies; it is not yet a complete notices bundle.
