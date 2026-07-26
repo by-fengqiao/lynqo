@@ -8,6 +8,7 @@ import type { ThemeMode } from "@/types";
 import LanguageSelector from "@/components/settings/LanguageSelector.vue";
 import { useLocale, type Locale } from "@/i18n";
 import type { CloseBehavior } from "@/services/tauri";
+import { APP_NAME } from "@/config/brand";
 
 const settingsStore = useSettingsStore();
 const appStore = useAppStore();
@@ -192,7 +193,7 @@ async function changeFolder() {
         <div class="about-grid">
           <div class="about-item">
             <span class="about-label">{{ t("settings.appName") }}</span>
-            <span class="about-value">LanNook</span>
+            <span class="about-value">{{ APP_NAME }}</span>
           </div>
           <div class="about-item">
             <span class="about-label">{{ t("settings.version") }}</span>

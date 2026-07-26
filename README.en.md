@@ -127,6 +127,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 Before opening an issue, search the existing [Issues](https://github.com/by-fengqiao/lannook/issues). A useful report includes the operating-system version, network setup, reproduction steps, and connection diagnostics. See the [Contribution Guide](CONTRIBUTING.en.md) for code submissions or the [中文贡献指南](CONTRIBUTING.md).
 
 - [v26.1.7 release notes](docs/releases/v26.1.7.md)
+- [v26.2.1 fix notes](docs/releases/v26.2.1.md)
 - [v26.2.0 rename notes](docs/releases/v26.2.0.md)
 - [LYNQO to LanNook migration](docs/migrations/lynqo-to-lannook.md)
 - Created and maintained by [by-fengqiao](https://github.com/by-fengqiao)

@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing GitHub Release tag to receive the installers
         required: true
-        default: v26.2.0
+        default: v26.2.1
         type: string
       platform:
         description: Platform group to build

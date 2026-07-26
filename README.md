@@ -127,6 +127,7 @@ cargo clippy --all-targets --all-features -- -D warnings
 发现问题时，请先在 [Issues](https://github.com/by-fengqiao/lannook/issues) 搜索，并尽量附上系统版本、网络环境、复现步骤和连接诊断结果。代码提交方式见 [贡献指南](CONTRIBUTING.md)；英文版见 [Contribution Guide](CONTRIBUTING.en.md)。
 
 - [v26.1.7 版本说明](docs/releases/v26.1.7.md)
+- [v26.2.1 修复说明](docs/releases/v26.2.1.md)
 - [v26.2.0 更名说明](docs/releases/v26.2.0.md)
 - [LYNQO → LanNook 迁移说明](docs/migrations/lynqo-to-lannook.md)
 - 发起与维护：[by-fengqiao](https://github.com/by-fengqiao)

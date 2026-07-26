@@ -78,7 +78,7 @@ watch(
     void refreshPanelData();
     const timer = window.setInterval(async () => {
       const previousIp = appStore.selectedConnectionIp;
-      await appStore.refreshConnectionData();
+      await appStore.refreshConnectionData({ silent: true });
       if (previousIp !== appStore.selectedConnectionIp) {
         await refreshDiagnostics(appStore.selectedConnectionIp || undefined);
       }
@@ -211,7 +211,7 @@ function trapFocus(event: KeyboardEvent) {
         <div class="qr-section">
           <div class="qr-code">
             <div
-              v-if="appStore.serverRunning && !appStore.connectionInfoLoading && appStore.qrCode?.svg"
+              v-if="appStore.serverRunning && appStore.qrCode?.svg"
               v-html="appStore.qrCode.svg"
               class="qr-svg"
             />

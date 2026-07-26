@@ -7,6 +7,7 @@ import AppLogo from "../components/common/AppLogo.vue";
 import { useAppStore } from "@/stores/app";
 import { useLocale } from "@/i18n";
 import { isTauri } from "@/services/tauri";
+import { APP_NAME } from "@/config/brand";
 
 const router = useRouter();
 const appStore = useAppStore();
@@ -64,9 +65,7 @@ const thirdPartyLibs = [
       <!-- Logo & Name -->
       <div class="about-header">
         <AppLogo :size="64" />
-        <h1 class="app-name">
-          LYN<span class="app-name-q">Q</span>O
-        </h1>
+        <h1 class="app-name">{{ APP_NAME }}</h1>
         <span class="app-version">v{{ appStore.appVersion }}</span>
       </div>
 
@@ -176,10 +175,6 @@ const thirdPartyLibs = [
   color: var(--color-text-primary);
   letter-spacing: 0.04em;
   margin: 0;
-}
-
-.app-name-q {
-  color: var(--color-brand-primary, #246BFF);
 }
 
 .app-version {

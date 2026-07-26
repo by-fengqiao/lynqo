@@ -113,6 +113,12 @@ fn powershell_literal(value: &str) -> String {
 
 #[cfg(target_os = "windows")]
 fn inspect_windows_firewall(port: u16) -> String {
+    use std::os::windows::process::CommandExt;
+
+    // `powershell.exe` is only used to query a firewall rule. Explicitly
+    // suppress its console window so opening a connection address never looks
+    // like LanNook is launching a terminal.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
     let executable = match std::env::current_exe() {
         Ok(path) => powershell_literal(&path.to_string_lossy()),
         Err(_) => return "unknown".to_string(),
@@ -138,6 +144,7 @@ Write-Output 'missing'
     );
 
     match std::process::Command::new("powershell.exe")
+        .creation_flags(CREATE_NO_WINDOW)
         .args(["-NoProfile", "-NonInteractive", "-Command", &script])
         .output()
     {

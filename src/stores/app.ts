@@ -14,13 +14,20 @@ import {
 import type { ServiceInfo, ConnectionInfo, QrCodeData } from "@/services/tauri";
 import { wsClient } from "@/services/websocket";
 import { fetchHostStatus } from "@/services/api";
+import { APP_NAME } from "@/config/brand";
+import { needsConnectionQrRefresh } from "@/utils/connectionQr";
+
+interface RefreshConnectionDataOptions {
+  /** Keep existing connection details visible during background reconciliation. */
+  silent?: boolean;
+}
 
 export const useAppStore = defineStore("app", () => {
   const serverRunning = ref<AppState["serverRunning"]>(false);
   const trayReady = ref(isTauri());
   const networkName = ref<AppState["networkName"]>("本地网络");
   const localIp = ref<AppState["localIp"]>("");
-  const deviceName = ref<AppState["deviceName"]>("LanNook");
+  const deviceName = ref<AppState["deviceName"]>(APP_NAME);
   const connectionToken = ref<AppState["connectionToken"]>("");
   const appVersion = ref("—");
 
@@ -31,6 +38,7 @@ export const useAppStore = defineStore("app", () => {
   const selectedConnectionIp = ref("");
   const connectionInfoLoading = ref(false);
   const connectionInfoError = ref<string | null>(null);
+  let connectionRefresh: Promise<void> | null = null;
 
   // True when the WebSocket gave up reconnecting; the UI shows a reconnect prompt.
   const connectionLost = ref(false);
@@ -150,7 +158,7 @@ export const useAppStore = defineStore("app", () => {
     if (isTauri()) {
       try {
         const data = await getConnectionQrCode(ip);
-        qrCode.value = data;
+        if (!qrCode.value || qrCode.value.url !== data.url) qrCode.value = data;
         if (ip) selectedConnectionIp.value = ip;
       } catch (err) {
         console.error("[app] Failed to refresh QR code:", err);
@@ -159,34 +167,49 @@ export const useAppStore = defineStore("app", () => {
   }
 
   /** Refresh connection metadata and QR as one snapshot for the panel. */
-  async function refreshConnectionData() {
+  async function refreshConnectionData(options: RefreshConnectionDataOptions = {}) {
     if (!isTauri()) return;
-    connectionInfoLoading.value = true;
-    connectionInfoError.value = null;
-    try {
-      // Connection info refreshes the OS adapter snapshot first. Generate the
-      // QR from that exact snapshot so an old/disconnected IP cannot leak into
-      // the code shown to the user.
-      const info = await getConnectionInfo();
-      const nextIp = info.addresses.some((entry) => entry.ip === selectedConnectionIp.value)
-        ? selectedConnectionIp.value
-        : info.ip;
-      const qr = await getConnectionQrCode(nextIp);
-      connectionInfo.value = info;
-      qrCode.value = qr;
-      selectedConnectionIp.value = nextIp;
-      localIp.value = info.ip;
-      connectionToken.value = info.token;
-      networkName.value = info.networkName;
-      if (info.deviceName) deviceName.value = info.deviceName;
-    } catch (error) {
-      qrCode.value = null;
-      connectionInfoError.value =
-        error instanceof Error ? error.message : "Unable to load connection information.";
-      console.error("[app] Failed to refresh connection information:", error);
-    } finally {
-      connectionInfoLoading.value = false;
-    }
+    if (connectionRefresh) return connectionRefresh;
+
+    // Do not hide an already-scanned QR code while the panel performs its
+    // periodic adapter check. The code is rebuilt only when its address or
+    // pairing token actually changes.
+    const showLoading = !options.silent && !qrCode.value;
+    if (showLoading) connectionInfoLoading.value = true;
+    if (!options.silent) connectionInfoError.value = null;
+
+    connectionRefresh = (async () => {
+      try {
+        const info = await getConnectionInfo();
+        const nextIp = info.addresses.some((entry) => entry.ip === selectedConnectionIp.value)
+          ? selectedConnectionIp.value
+          : info.ip;
+        const qr = needsConnectionQrRefresh(qrCode.value, nextIp, info.port, info.token)
+          ? await getConnectionQrCode(nextIp)
+          : qrCode.value;
+        if (!qr) throw new Error("Unable to generate connection QR code.");
+
+        connectionInfo.value = info;
+        if (!qrCode.value || qrCode.value.url !== qr.url) qrCode.value = qr;
+        selectedConnectionIp.value = nextIp;
+        localIp.value = info.ip;
+        connectionToken.value = info.token;
+        networkName.value = info.networkName;
+        if (info.deviceName) deviceName.value = info.deviceName;
+      } catch (error) {
+        if (!options.silent) {
+          connectionInfoError.value =
+            error instanceof Error ? error.message : "Unable to load connection information.";
+        }
+        console.error("[app] Failed to refresh connection information:", error);
+      } finally {
+        if (showLoading) connectionInfoLoading.value = false;
+      }
+    })().finally(() => {
+      connectionRefresh = null;
+    });
+
+    return connectionRefresh;
   }
 
   /** Switch the QR code to another currently active LAN path (for example a
@@ -195,13 +218,11 @@ export const useAppStore = defineStore("app", () => {
     const address = connectionInfo.value?.addresses.find((entry) => entry.ip === ip);
     if (!address) throw new Error("selected_address_inactive");
     connectionInfoLoading.value = true;
-    const previousQrCode = qrCode.value;
-    qrCode.value = null;
     try {
-      qrCode.value = await getConnectionQrCode(ip);
+      const qr = await getConnectionQrCode(ip);
+      if (!qrCode.value || qrCode.value.url !== qr.url) qrCode.value = qr;
       selectedConnectionIp.value = ip;
     } catch (error) {
-      qrCode.value = previousQrCode;
       throw error;
     } finally {
       connectionInfoLoading.value = false;

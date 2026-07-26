@@ -20,6 +20,7 @@ import DeviceAccessRequestDialog from "../components/overlays/DeviceAccessReques
 import { openConnectPanelKey } from "../composables/useConnectPanel";
 import { wsClient } from "@/services/websocket";
 import { useLocale } from "@/i18n";
+import { APP_NAME } from "@/config/brand";
 
 const appStore = useAppStore();
 const devicesStore = useDevicesStore();
@@ -124,9 +125,7 @@ const navItems = computed(() => [
       <div class="topbar-left">
         <div class="logo">
           <AppLogo :size="28" />
-          <span class="logo-text">
-            <span>LYN</span><span class="logo-q">Q</span><span>O</span>
-          </span>
+          <span class="logo-text">{{ APP_NAME }}</span>
         </div>
         <span class="network-badge">{{ appStore.networkName }}</span>
       </div>
@@ -244,10 +243,6 @@ const navItems = computed(() => [
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.logo-q {
-  color: var(--color-primary, #246BFF);
 }
 
 .logo-text {

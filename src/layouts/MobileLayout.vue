@@ -9,6 +9,7 @@ import AppLogo from "../components/common/AppLogo.vue";
 import ReceiveRequestDialog from "@/components/overlays/ReceiveRequestDialog.vue";
 import { fetchHostStatus } from "../services/api";
 import { useLocale } from "@/i18n";
+import { APP_NAME } from "@/config/brand";
 
 const settingsStore = useSettingsStore();
 const mobileSession = useMobileSessionStore();
@@ -103,9 +104,7 @@ function closeMenu() {
     <header class="mobile-topbar">
       <div class="topbar-left">
         <AppLogo :size="24" />
-        <span class="logo-text">
-          <span>LYN</span><span class="logo-q">Q</span><span>O</span>
-        </span>
+        <span class="logo-text">{{ APP_NAME }}</span>
       </div>
 
       <div class="topbar-center">
@@ -208,10 +207,6 @@ function closeMenu() {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-.logo-q {
-  color: var(--color-primary, #246BFF);
 }
 
 .logo-text {

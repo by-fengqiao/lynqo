@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import appIcon from "../../../src-tauri/icons/128x128.png";
+import { APP_NAME } from "@/config/brand";
 
 withDefaults(
   defineProps<{
@@ -17,7 +18,7 @@ withDefaults(
     :width="size"
     :height="size"
     class="app-logo"
-    alt="LanNook"
+    :alt="APP_NAME"
   />
 </template>
 
