@@ -23,6 +23,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # tauri-action replaces latest.json with a read/merge/upload cycle. Serializing
+      # release jobs prevents two platforms from deleting or overwriting it at once.
+      max-parallel: 1
       matrix:
         include:
           - name: Windows x64
@@ -80,5 +83,6 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }} --bundles ${{ matrix.bundles }}
-          uploadUpdaterJson: true
+          retryAttempts: 2
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
