@@ -1,17 +1,33 @@
 pub mod download;
 pub mod handlers;
+mod network;
 pub mod ws;
 
 use axum::extract::DefaultBodyLimit;
+use axum::response::IntoResponse;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{broadcast, Mutex};
-use tower_http::services::{ServeDir, ServeFile};
+use tower_http::services::ServeDir;
+use tower_http::set_header::SetResponseHeaderLayer;
 
 use crate::storage::Database;
 
 /// Default server port
 pub const DEFAULT_PORT: u16 = 53317;
+
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LanInterface {
+    pub name: String,
+    pub ip: String,
+    pub is_private: bool,
+    pub is_virtual: bool,
+    pub kind: String,
+    pub has_default_gateway: bool,
+    pub is_default_route: bool,
+    pub selected: bool,
+}
 
 /// File metadata included in transfer request events
 #[derive(Debug, Clone, serde::Serialize)]
@@ -189,6 +205,12 @@ pub struct AppState {
     /// Keeps the mDNS service registered while present. Taking and dropping
     /// this guard unregisters the service from the LAN (see stop_local_service).
     pub mdns_guard: Option<crate::discovery::MdnsGuard>,
+    /// Incremented whenever the selected network endpoint changes. Async mDNS
+    /// work must match this generation before installing a new advertisement.
+    pub network_generation: u64,
+    /// Generation currently being advertised outside the state lock. This
+    /// prevents concurrent refresh commands from racing duplicate mDNS work.
+    pub mdns_refresh_generation: Option<u64>,
 }
 
 impl AppState {
@@ -197,42 +219,46 @@ impl AppState {
         let connection_token = uuid::Uuid::new_v4().to_string();
         let desktop_control_token = uuid::Uuid::new_v4().to_string();
 
-        let device_name = std::env::var("COMPUTERNAME")
-            .or_else(|_| std::env::var("HOSTNAME"))
-            .unwrap_or_else(|_| "LYNQO Device".to_string());
+        // A one-time authorization belongs to one desktop service lifetime.
+        // Clear stale approvals left by a crash or forced shutdown while
+        // preserving devices the user explicitly trusted.
+        if let Err(error) = db.revoke_untrusted_device_access() {
+            tracing::warn!("Failed to reset one-time device access: {}", error);
+        }
 
-        // Restore the persisted receive folder so a user-configured folder
-        // survives app restarts; fall back to the default on any failure.
-        let receive_folder = match db.get_settings() {
-            Ok(settings) if !settings.receive_folder.is_empty() => settings.receive_folder,
-            Ok(_) => crate::transfer::default_receive_folder()
-                .to_string_lossy()
-                .to_string(),
+        let settings = match db.get_settings() {
+            Ok(settings) => settings,
             Err(e) => {
-                tracing::warn!("Failed to read receive_folder setting: {}", e);
-                crate::transfer::default_receive_folder()
-                    .to_string_lossy()
-                    .to_string()
+                tracing::warn!("Failed to restore application settings: {}", e);
+                crate::storage::Settings::default()
             }
         };
 
+        let selected_interface = get_network_interfaces().into_iter().next();
+
         Self {
             status: ServiceStatus::Stopped,
-            port: DEFAULT_PORT,
-            local_ip: get_local_ip(),
+            port: settings.port,
+            local_ip: selected_interface
+                .as_ref()
+                .map(|interface| interface.ip.clone()),
             connection_token,
             desktop_control_token,
-            device_name,
-            network_name: "Local Network".to_string(),
+            device_name: settings.device_name,
+            network_name: selected_interface
+                .map(|interface| interface.name)
+                .unwrap_or_else(|| "Local Network".to_string()),
             started_at: None,
             error: None,
             db,
             event_tx,
             shutdown_tx: None,
-            receive_folder,
+            receive_folder: settings.receive_folder,
             connected_devices: HashMap::new(),
             transfer_telemetry: HashMap::new(),
             mdns_guard: None,
+            network_generation: 0,
+            mdns_refresh_generation: None,
         }
     }
 
@@ -256,42 +282,142 @@ impl AppState {
 
 pub type SharedState = Arc<Mutex<AppState>>;
 
-/// Get the best local IPv4 address (exclude 127.x, 169.254.x, prefer 192.168.x)
-pub fn get_local_ip() -> Option<String> {
-    // Try local-ip-address crate first
-    if let Ok(std::net::IpAddr::V4(v4)) = local_ip_address::local_ip() {
-        let octets = v4.octets();
-        if octets[0] != 127 && !(octets[0] == 169 && octets[1] == 254) {
-            return Some(v4.to_string());
-        }
+fn is_virtual_adapter(name: &str) -> bool {
+    let normalized = name.to_ascii_lowercase();
+    [
+        "virtual",
+        "vethernet",
+        "hyper-v",
+        "vmware",
+        "virtualbox",
+        "vbox",
+        "docker",
+        "wsl",
+        "tailscale",
+        "zerotier",
+        "hamachi",
+        "tunnel",
+        "loopback",
+        "vpn",
+    ]
+    .iter()
+    .any(|marker| normalized.contains(marker))
+}
+
+fn is_hotspot_adapter(name: &str, description: &str, ip: std::net::Ipv4Addr) -> bool {
+    let normalized = format!("{name} {description}").to_ascii_lowercase();
+    ip == std::net::Ipv4Addr::new(192, 168, 137, 1)
+        || normalized.contains("wi-fi direct")
+        || normalized.contains("mobile hotspot")
+}
+
+fn interface_score(
+    name: &str,
+    description: &str,
+    ip: std::net::Ipv4Addr,
+    has_default_gateway: bool,
+    is_default_route: bool,
+) -> i32 {
+    let octets = ip.octets();
+    let mut score = 0;
+    let classifier = format!("{name} {description}");
+    let hotspot = is_hotspot_adapter(name, description, ip);
+    let is_virtual = is_virtual_adapter(&classifier) && !hotspot;
+    // A VPN can own the OS default route, but that does not make it reachable
+    // from a phone on the physical LAN. Keep usable physical/hotspot adapters
+    // in a higher score class before considering route preference.
+    if !is_virtual {
+        score += 100_000;
     }
+    if ip.is_private() {
+        score += 50_000;
+    }
+    if is_default_route {
+        score += 20_000;
+    }
+    if has_default_gateway {
+        score += 5_000;
+    }
+    if hotspot {
+        score += 3_000;
+    } else if !is_virtual {
+        score += 1_000;
+    }
+    if octets[0] == 192 && octets[1] == 168 {
+        score += 100;
+    } else if octets[0] == 10 {
+        score += 80;
+    } else if octets[0] == 172 && (16..=31).contains(&octets[1]) {
+        score += 60;
+    }
+    score
+}
 
-    // Fallback: enumerate interfaces and pick the best one
-    if let Ok(addrs) = local_ip_address::list_afinet_netifas() {
-        let mut fallback: Option<String> = None;
+/// Enumerate usable IPv4 interfaces and deterministically choose the address
+/// most likely to be reachable by another device on the same physical LAN.
+pub fn get_network_interfaces() -> Vec<LanInterface> {
+    let mut candidates = network::active_ipv4_interfaces();
+    candidates.sort_by(|left, right| {
+        interface_score(
+            &right.name,
+            &right.description,
+            right.ip,
+            right.has_default_gateway,
+            right.is_default_route,
+        )
+        .cmp(&interface_score(
+            &left.name,
+            &left.description,
+            left.ip,
+            left.has_default_gateway,
+            left.is_default_route,
+        ))
+        .then_with(|| left.name.cmp(&right.name))
+        .then_with(|| left.ip.octets().cmp(&right.ip.octets()))
+    });
+    candidates.dedup_by(|left, right| left.name == right.name && left.ip == right.ip);
 
-        for (_name, ip) in addrs {
-            if let std::net::IpAddr::V4(v4) = ip {
-                let octets = v4.octets();
-                // Skip loopback and link-local
-                if octets[0] == 127 || (octets[0] == 169 && octets[1] == 254) {
-                    continue;
-                }
-                // Prefer 192.168.x.x
-                if octets[0] == 192 && octets[1] == 168 {
-                    return Some(v4.to_string());
-                }
-                // Keep 10.x.x.x or 172.16-31.x.x as fallback
-                if fallback.is_none() {
-                    fallback = Some(v4.to_string());
-                }
+    let mut interfaces: Vec<LanInterface> = candidates
+        .into_iter()
+        .map(|candidate| {
+            let classifier = format!("{} {}", candidate.name, candidate.description);
+            let hotspot = is_hotspot_adapter(&candidate.name, &candidate.description, candidate.ip);
+            let is_virtual = is_virtual_adapter(&classifier) && !hotspot;
+            LanInterface {
+                is_private: candidate.ip.is_private(),
+                is_virtual,
+                kind: if hotspot {
+                    "hotspot".to_string()
+                } else if is_virtual {
+                    "virtual".to_string()
+                } else {
+                    "lan".to_string()
+                },
+                has_default_gateway: candidate.has_default_gateway,
+                is_default_route: candidate.is_default_route,
+                selected: false,
+                name: candidate.name,
+                ip: candidate.ip.to_string(),
             }
-        }
-
-        return fallback;
+        })
+        .collect();
+    if let Some(selected) = interfaces
+        .iter_mut()
+        .find(|interface| interface.is_private && !interface.is_virtual)
+    {
+        selected.selected = true;
     }
+    interfaces
+}
 
-    None
+pub fn get_local_ip() -> Option<String> {
+    get_selected_interface().map(|interface| interface.ip)
+}
+
+pub fn get_selected_interface() -> Option<LanInterface> {
+    get_network_interfaces()
+        .into_iter()
+        .find(|interface| interface.selected)
 }
 
 /// Start the Axum server on 0.0.0.0:53317
@@ -315,8 +441,32 @@ pub async fn start_server(state: SharedState, frontend_dir: String) -> Result<()
     // The desktop UI uses history-mode Vue routes (for example `/mobile`).
     // Serve the entry document for an unknown path so a phone opening the QR
     // URL can boot the SPA and let the client router render that route.
-    let index_html = std::path::Path::new(&frontend_dir).join("index.html");
-    let frontend = ServeDir::new(&frontend_dir).not_found_service(ServeFile::new(index_html));
+    let frontend_root = std::path::Path::new(&frontend_dir);
+    let index_html = frontend_root.join("index.html");
+    let assets_dir = frontend_root.join("assets");
+    let spa_fallback = move |uri: axum::http::Uri| {
+        let index_html = index_html.clone();
+        async move {
+            // Client-side routes have no file extension. Missing asset-like
+            // paths must remain a real 404 instead of returning HTML with a
+            // misleading 200 response.
+            if std::path::Path::new(uri.path()).extension().is_some() {
+                return axum::http::StatusCode::NOT_FOUND.into_response();
+            }
+            match tokio::fs::read(index_html).await {
+                Ok(contents) => (
+                    axum::http::StatusCode::OK,
+                    [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                    contents,
+                )
+                    .into_response(),
+                Err(error) => {
+                    tracing::error!("Failed to serve SPA entry document: {}", error);
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
+                }
+            }
+        }
+    };
 
     // Build the router
     let app = axum::Router::new()
@@ -387,40 +537,58 @@ pub async fn start_server(state: SharedState, frontend_dir: String) -> Result<()
             "/api/transfers/{id}/cancel",
             axum::routing::post(handlers::cancel_transfer),
         )
+        .route("/api/{*path}", axum::routing::any(handlers::api_not_found))
         .route("/ws", axum::routing::get(ws::ws_handler))
-        .fallback_service(frontend)
+        .nest_service("/assets", ServeDir::new(assets_dir))
+        .fallback(spa_fallback)
         // File chunks are 4 MiB. Axum otherwise rejects bodies above 2 MiB
         // before `upload_chunk` can process them.
         .layer(DefaultBodyLimit::max(
             crate::transfer::CHUNK_SIZE as usize + 1024,
         ))
+        // The desktop serves the current embedded build. Prevent mobile
+        // browsers from reviving an old index/assets mapping after an update.
+        .layer(SetResponseHeaderLayer::if_not_present(
+            axum::http::header::CACHE_CONTROL,
+            axum::http::HeaderValue::from_static("no-store"),
+        ))
         .with_state(state.clone());
 
-    // Create shutdown channel
-    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-    {
-        let mut s = state.lock().await;
-        s.shutdown_tx = Some(shutdown_tx);
-    }
-
     // Bind the listener
-    let listener = tokio::net::TcpListener::bind(addr).await.map_err(|e| {
-        let err_msg = format!("Failed to bind to {}: {}", addr, e);
-        tracing::error!("{}", err_msg);
-        err_msg
-    })?;
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            let error_message = format!("Failed to bind to {}: {}", addr, error);
+            let mut s = state.lock().await;
+            s.status = ServiceStatus::Failed;
+            s.error = Some(error_message.clone());
+            s.shutdown_tx = None;
+            tracing::error!("{}", error_message);
+            return Err(error_message);
+        }
+    };
+
+    // Only expose a shutdown handle after the port is actually bound.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
 
     // Update state to running
     {
         let mut s = state.lock().await;
         s.status = ServiceStatus::Running;
+        s.shutdown_tx = Some(shutdown_tx);
         s.started_at = Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_secs().to_string())
                 .unwrap_or_default(),
         );
-        s.local_ip = get_local_ip();
+        let selected_interface = get_selected_interface();
+        s.local_ip = selected_interface
+            .as_ref()
+            .map(|interface| interface.ip.clone());
+        s.network_name = selected_interface
+            .map(|interface| interface.name)
+            .unwrap_or_else(|| "Local Network".to_string());
     }
 
     tracing::info!("LYNQO server started on {}", addr);
@@ -440,6 +608,15 @@ pub async fn start_server(state: SharedState, frontend_dir: String) -> Result<()
         let mut s = state.lock().await;
         s.status = ServiceStatus::Stopped;
         s.shutdown_tx = None;
+        s.connected_devices.clear();
+        match s.db.revoke_untrusted_device_access() {
+            Ok(device_ids) => {
+                for device_id in device_ids {
+                    let _ = s.event_tx.send(WsEvent::DeviceRejected { device_id });
+                }
+            }
+            Err(error) => tracing::warn!("Failed to expire one-time device access: {}", error),
+        }
         if let Err(e) = server_result {
             s.error = Some(e.to_string());
             s.status = ServiceStatus::Failed;
@@ -494,5 +671,136 @@ mod tests {
         assert_eq!(payload["payload"]["transferId"], "transfer-1");
         assert_eq!(payload["payload"]["speedBytesPerSecond"], 7);
         assert!(payload["payload"].get("transfer_id").is_none());
+    }
+
+    #[test]
+    fn physical_private_adapter_beats_virtual_and_public_candidates() {
+        let wifi = interface_score(
+            "Wi-Fi",
+            "Wireless adapter",
+            "192.168.1.5".parse().unwrap(),
+            true,
+            true,
+        );
+        let vpn = interface_score(
+            "Tailscale Tunnel",
+            "Virtual",
+            "100.64.0.2".parse().unwrap(),
+            false,
+            false,
+        );
+        let docker = interface_score(
+            "DockerNAT",
+            "Virtual",
+            "10.0.75.1".parse().unwrap(),
+            false,
+            false,
+        );
+        let public = interface_score(
+            "Ethernet",
+            "Physical",
+            "8.8.8.8".parse().unwrap(),
+            false,
+            false,
+        );
+
+        assert!(wifi > vpn);
+        assert!(wifi > docker);
+        assert!(wifi > public);
+    }
+
+    #[test]
+    fn default_route_beats_hotspot_but_hotspot_beats_unrouted_virtual_adapter() {
+        let ethernet = interface_score(
+            "Ethernet",
+            "Physical adapter",
+            "192.168.1.2".parse().unwrap(),
+            true,
+            true,
+        );
+        let hotspot = interface_score(
+            "Local Area Connection* 10",
+            "Microsoft Wi-Fi Direct Virtual Adapter",
+            "192.168.137.1".parse().unwrap(),
+            false,
+            false,
+        );
+        let wsl = interface_score(
+            "vEthernet (WSL)",
+            "Hyper-V Virtual Ethernet Adapter",
+            "172.19.176.1".parse().unwrap(),
+            false,
+            false,
+        );
+
+        assert!(ethernet > hotspot);
+        assert!(hotspot > wsl);
+    }
+
+    #[test]
+    fn private_lan_beats_public_route_and_true_default_beats_secondary_gateway() {
+        let public_route = interface_score(
+            "Ethernet 2",
+            "Physical adapter",
+            "8.8.8.8".parse().unwrap(),
+            true,
+            true,
+        );
+        let private_hotspot = interface_score(
+            "Local Area Connection* 10",
+            "Microsoft Wi-Fi Direct Virtual Adapter",
+            "192.168.137.1".parse().unwrap(),
+            false,
+            false,
+        );
+        let default_lan = interface_score(
+            "Ethernet",
+            "Physical adapter",
+            "192.168.1.2".parse().unwrap(),
+            true,
+            true,
+        );
+        let secondary_lan = interface_score(
+            "Wi-Fi",
+            "Physical adapter",
+            "192.168.2.2".parse().unwrap(),
+            true,
+            false,
+        );
+
+        assert!(private_hotspot > public_route);
+        assert!(default_lan > secondary_lan);
+    }
+
+    #[test]
+    fn virtual_adapter_detection_covers_common_desktop_networks() {
+        assert!(is_virtual_adapter("vEthernet (WSL)"));
+        assert!(is_virtual_adapter("Tailscale Tunnel"));
+        assert!(!is_virtual_adapter("Wi-Fi"));
+        assert!(!is_virtual_adapter("Ethernet"));
+    }
+
+    #[tokio::test]
+    async fn bind_failure_sets_failed_status_and_preserves_the_error() {
+        let occupied = tokio::net::TcpListener::bind(("0.0.0.0", 0)).await.unwrap();
+        let port = occupied.local_addr().unwrap().port();
+        let database_path = std::env::temp_dir().join(format!(
+            "lynqo-server-bind-failure-{}.sqlite",
+            uuid::Uuid::new_v4()
+        ));
+        let database = std::sync::Arc::new(Database::open(&database_path).unwrap());
+        let state = std::sync::Arc::new(Mutex::new(AppState::new(database)));
+        state.lock().await.port = port;
+
+        let result = start_server(state.clone(), "missing-frontend".to_string()).await;
+        assert!(result.is_err());
+        let snapshot = state.lock().await;
+        assert_eq!(snapshot.status, ServiceStatus::Failed);
+        assert!(snapshot
+            .error
+            .as_deref()
+            .is_some_and(|message| message.contains(&port.to_string())));
+        assert!(snapshot.shutdown_tx.is_none());
+        assert!(snapshot.mdns_guard.is_none());
     }
 }

@@ -100,9 +100,12 @@ export const useSettingsStore = defineStore("settings", () => {
     void saveSettings();
   }
 
-  function setRequireApproval(value: boolean) {
+  async function setRequireApproval(value: boolean): Promise<boolean> {
+    const previous = requireApproval.value;
     requireApproval.value = value;
-    void saveSettings();
+    const saved = await saveSettings();
+    if (!saved) requireApproval.value = previous;
+    return saved;
   }
 
   function setMaxFileSize(bytes: number) {
@@ -166,7 +169,7 @@ export const useSettingsStore = defineStore("settings", () => {
   /**
    * Save current settings to the Tauri backend.
    */
-  async function saveSettings() {
+  async function saveSettings(): Promise<boolean> {
     if (isTauri()) {
       try {
         const result = await updateSettings({
@@ -176,11 +179,14 @@ export const useSettingsStore = defineStore("settings", () => {
           themeMode: themeMode.value,
         });
         if (!result.success) throw new Error(result.error ?? "保存设置失败");
+        return true;
       } catch (err) {
         console.error("[settings] Failed to save settings:", err);
+        return false;
       }
     }
     // In browser mode, settings are kept in memory only
+    return true;
   }
 
   /**

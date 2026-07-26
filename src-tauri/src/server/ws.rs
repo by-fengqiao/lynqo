@@ -1,7 +1,7 @@
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::IntoResponse;
-use futures_util::StreamExt;
+use futures_util::{SinkExt, StreamExt};
 use std::collections::HashMap;
 
 use crate::server::{SharedState, WsEvent};
@@ -82,22 +82,17 @@ pub async fn ws_handler(
         }
     };
 
-    let device_id = device.as_ref().map(|device| device.id.clone());
-
-    // Subscribe to the broadcast channel before upgrading
+    // Subscribe before upgrading so the new socket cannot miss an event that
+    // races with the handshake. Online accounting starts only after Axum has
+    // actually completed the WebSocket upgrade.
     let rx = {
-        let mut s = state.lock().await;
-        if let Some(device) = &device {
-            if add_device_connection(&mut s.connected_devices, &device.id) {
-                let _ = s.event_tx.send(device_session_event(device));
-            }
-        }
+        let s = state.lock().await;
         s.event_tx.subscribe()
     };
 
     tracing::info!("WebSocket connection accepted");
 
-    ws.on_upgrade(move |socket| handle_socket(socket, rx, state, device_id))
+    ws.on_upgrade(move |socket| handle_socket(socket, rx, state, device))
 }
 
 /// Handle an individual WebSocket connection.
@@ -106,19 +101,27 @@ async fn handle_socket(
     socket: WebSocket,
     mut rx: tokio::sync::broadcast::Receiver<crate::server::WsEvent>,
     state: SharedState,
-    device_id: Option<String>,
+    device: Option<DeviceRecord>,
 ) {
     let (mut sender, mut receiver) = socket.split();
+    let device_id = device.as_ref().map(|entry| entry.id.clone());
 
-    // Task: forward broadcast events to this WebSocket client
-    let recipient_id = device_id.clone();
-    let mut send_task = tokio::spawn(async move {
-        use futures_util::SinkExt;
+    if let Some(device) = &device {
+        let mut s = state.lock().await;
+        if add_device_connection(&mut s.connected_devices, &device.id) {
+            let _ = s.event_tx.send(device_session_event(device));
+        }
+    }
 
-        loop {
-            match rx.recv().await {
+    let mut heartbeat = tokio::time::interval(tokio::time::Duration::from_secs(20));
+    heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_activity = tokio::time::Instant::now();
+
+    loop {
+        tokio::select! {
+            event = rx.recv() => match event {
                 Ok(event) => {
-                    if !should_deliver_event(&event, recipient_id.as_deref()) {
+                    if !should_deliver_event(&event, device_id.as_deref()) {
                         continue;
                     }
                     let json = match serde_json::to_string(&event) {
@@ -130,7 +133,6 @@ async fn handle_socket(
                     };
 
                     if sender.send(Message::Text(json.into())).await.is_err() {
-                        // Client disconnected
                         break;
                     }
                 }
@@ -139,66 +141,45 @@ async fn handle_socket(
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    // Broadcast channel closed (server shutting down)
                     break;
                 }
-            }
-        }
-    });
-
-    // Task: handle incoming messages from the client (ping/pong, close)
-    let mut recv_task = tokio::spawn(async move {
-        while let Some(msg) = receiver.next().await {
-            match msg {
-                Ok(Message::Ping(data)) => {
-                    // axum handles pong automatically in most cases,
-                    // but we acknowledge the ping here for completeness
-                    tracing::debug!("Received ping ({} bytes)", data.len());
+            },
+            message = receiver.next() => match message {
+                Some(Ok(Message::Ping(data))) => {
+                    last_activity = tokio::time::Instant::now();
+                    if sender.send(Message::Pong(data)).await.is_err() {
+                        break;
+                    }
                 }
-                Ok(Message::Close(_)) => {
-                    tracing::info!("WebSocket client sent close frame");
-                    break;
+                Some(Ok(Message::Pong(_)))
+                | Some(Ok(Message::Text(_)))
+                | Some(Ok(Message::Binary(_))) => {
+                    last_activity = tokio::time::Instant::now();
                 }
-                Ok(_) => {
-                    // Ignore text/binary messages from clients
-                }
-                Err(e) => {
+                Some(Ok(Message::Close(_))) | None => break,
+                Some(Err(e)) => {
                     tracing::error!("WebSocket receive error: {}", e);
                     break;
                 }
+            },
+            _ = heartbeat.tick() => {
+                if last_activity.elapsed() > tokio::time::Duration::from_secs(60) {
+                    tracing::warn!("WebSocket heartbeat timed out");
+                    break;
+                }
+                if sender.send(Message::Ping(Vec::new().into())).await.is_err() {
+                    break;
+                }
             }
-        }
-    });
-
-    // Wait for either task to complete (client disconnect or server shutdown)
-    tokio::select! {
-        _ = &mut send_task => {
-            tracing::info!("WebSocket send task ended");
-            recv_task.abort();
-            let _ = recv_task.await;
-        }
-        _ = &mut recv_task => {
-            tracing::info!("WebSocket receive task ended");
-            send_task.abort();
-            let _ = send_task.await;
         }
     }
 
     if let Some(device_id) = device_id {
         let mut s = state.lock().await;
         if remove_device_connection(&mut s.connected_devices, &device_id) {
-            // "Allow once" is deliberately scoped to an active browser
-            // session. Only a device the user explicitly trusted keeps its
-            // authorization after its final socket closes.
-            match s.db.get_device_by_id(&device_id) {
-                Ok(Some(device)) if !device.trusted => {
-                    if let Err(error) = s.db.set_device_access(&device_id, false, false) {
-                        tracing::warn!("Failed to revoke one-time device access: {}", error);
-                    }
-                }
-                Ok(_) => {}
-                Err(error) => tracing::warn!("Failed to read device at disconnect: {}", error),
-            }
+            // A phone browser may suspend its socket during a screen lock or
+            // Wi-Fi handoff. One-time approval remains valid for this desktop
+            // service lifetime and is reset on stop, restart, or token reset.
             let _ = s.event_tx.send(WsEvent::DeviceDisconnected { device_id });
         }
     }

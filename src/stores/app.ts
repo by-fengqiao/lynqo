@@ -28,6 +28,9 @@ export const useAppStore = defineStore("app", () => {
   const serviceStatus = ref<ServiceInfo | null>(null);
   const connectionInfo = ref<ConnectionInfo | null>(null);
   const qrCode = ref<QrCodeData | null>(null);
+  const selectedConnectionIp = ref("");
+  const connectionInfoLoading = ref(false);
+  const connectionInfoError = ref<string | null>(null);
 
   // True when the WebSocket gave up reconnecting; the UI shows a reconnect prompt.
   const connectionLost = ref(false);
@@ -60,17 +63,7 @@ export const useAppStore = defineStore("app", () => {
         console.error("[app] Failed to get service status:", err);
       }
 
-      try {
-        const info = await getConnectionInfo();
-        connectionInfo.value = info;
-        localIp.value = info.ip;
-        connectionToken.value = info.token;
-        if (info.deviceName) {
-          deviceName.value = info.deviceName;
-        }
-      } catch (err) {
-        console.error("[app] Failed to get connection info:", err);
-      }
+      await refreshConnectionData();
       try {
         appVersion.value = (await getAppVersion()).version;
       } catch (err) {
@@ -105,13 +98,16 @@ export const useAppStore = defineStore("app", () => {
         serviceStatus.value = status;
         serverRunning.value = status.status === "running";
 
-        // Refresh connection info after starting
-        const info = await getConnectionInfo();
-        connectionInfo.value = info;
-        localIp.value = info.ip;
-        connectionToken.value = info.token;
+        await refreshConnectionData();
       } catch (err) {
         console.error("[app] Failed to start server:", err);
+        try {
+          const status = await getLocalServiceStatus();
+          serviceStatus.value = status;
+          serverRunning.value = status.status === "running";
+        } catch {
+          serverRunning.value = false;
+        }
         pushToast("error", "启动失败", err instanceof Error ? err.message : "无法启动服务");
       }
     }
@@ -128,6 +124,7 @@ export const useAppStore = defineStore("app", () => {
         const status = await getLocalServiceStatus();
         serviceStatus.value = status;
         serverRunning.value = status.status === "running";
+        qrCode.value = null;
       } catch (err) {
         console.error("[app] Failed to stop server:", err);
         pushToast("error", "停止失败", err instanceof Error ? err.message : "无法停止服务");
@@ -149,14 +146,65 @@ export const useAppStore = defineStore("app", () => {
   /**
    * Refresh the QR code data from the backend.
    */
-  async function refreshQrCode() {
+  async function refreshQrCode(ip = selectedConnectionIp.value || undefined) {
     if (isTauri()) {
       try {
-        const data = await getConnectionQrCode();
+        const data = await getConnectionQrCode(ip);
         qrCode.value = data;
+        if (ip) selectedConnectionIp.value = ip;
       } catch (err) {
         console.error("[app] Failed to refresh QR code:", err);
       }
+    }
+  }
+
+  /** Refresh connection metadata and QR as one snapshot for the panel. */
+  async function refreshConnectionData() {
+    if (!isTauri()) return;
+    connectionInfoLoading.value = true;
+    connectionInfoError.value = null;
+    try {
+      // Connection info refreshes the OS adapter snapshot first. Generate the
+      // QR from that exact snapshot so an old/disconnected IP cannot leak into
+      // the code shown to the user.
+      const info = await getConnectionInfo();
+      const nextIp = info.addresses.some((entry) => entry.ip === selectedConnectionIp.value)
+        ? selectedConnectionIp.value
+        : info.ip;
+      const qr = await getConnectionQrCode(nextIp);
+      connectionInfo.value = info;
+      qrCode.value = qr;
+      selectedConnectionIp.value = nextIp;
+      localIp.value = info.ip;
+      connectionToken.value = info.token;
+      networkName.value = info.networkName;
+      if (info.deviceName) deviceName.value = info.deviceName;
+    } catch (error) {
+      qrCode.value = null;
+      connectionInfoError.value =
+        error instanceof Error ? error.message : "Unable to load connection information.";
+      console.error("[app] Failed to refresh connection information:", error);
+    } finally {
+      connectionInfoLoading.value = false;
+    }
+  }
+
+  /** Switch the QR code to another currently active LAN path (for example a
+   * Windows mobile-hotspot adapter) without changing the listening socket. */
+  async function selectConnectionAddress(ip: string) {
+    const address = connectionInfo.value?.addresses.find((entry) => entry.ip === ip);
+    if (!address) throw new Error("selected_address_inactive");
+    connectionInfoLoading.value = true;
+    const previousQrCode = qrCode.value;
+    qrCode.value = null;
+    try {
+      qrCode.value = await getConnectionQrCode(ip);
+      selectedConnectionIp.value = ip;
+    } catch (error) {
+      qrCode.value = previousQrCode;
+      throw error;
+    } finally {
+      connectionInfoLoading.value = false;
     }
   }
 
@@ -166,8 +214,10 @@ export const useAppStore = defineStore("app", () => {
    */
   function connectWebSocket() {
     if (isTauri() && connectionInfo.value) {
-      const { ip, port, controlToken } = connectionInfo.value;
-      const wsUrl = `ws://${ip}:${port}/ws?token=${controlToken}`;
+      const { port, controlToken } = connectionInfo.value;
+      // Desktop control traffic stays on loopback. LAN adapter selection is
+      // only for phones and must not break the desktop's own live updates.
+      const wsUrl = `ws://127.0.0.1:${port}/ws?token=${controlToken}`;
       wsClient.connect(wsUrl);
     }
   }
@@ -216,7 +266,7 @@ export const useAppStore = defineStore("app", () => {
         if (connectionInfo.value) {
           connectionInfo.value = { ...connectionInfo.value, token: newToken };
         }
-        await refreshQrCode();
+        await refreshConnectionData();
         return;
       } catch (err) {
         console.error("[app] Failed to regenerate token via backend:", err);
@@ -261,6 +311,9 @@ export const useAppStore = defineStore("app", () => {
     serviceStatus,
     connectionInfo,
     qrCode,
+    selectedConnectionIp,
+    connectionInfoLoading,
+    connectionInfoError,
     toasts,
     deviceSheetOpen,
     connectionLost,
@@ -270,6 +323,8 @@ export const useAppStore = defineStore("app", () => {
     stopServer,
     toggleServer,
     refreshQrCode,
+    refreshConnectionData,
+    selectConnectionAddress,
     connectWebSocket,
     setupConnectionMonitor,
     manualReconnect,

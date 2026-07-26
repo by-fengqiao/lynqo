@@ -7,7 +7,9 @@ const supportedLocales: Locale[] = ["zh-CN", "en-US"];
 function readStoredLocale(): Locale {
   if (typeof window === "undefined") return "zh-CN";
   const stored = window.localStorage.getItem(storageKey);
-  return supportedLocales.includes(stored as Locale) ? (stored as Locale) : "zh-CN";
+  if (supportedLocales.includes(stored as Locale)) return stored as Locale;
+  const browserLocale = window.navigator.languages?.[0] ?? window.navigator.language;
+  return browserLocale?.toLowerCase().startsWith("zh") ? "zh-CN" : "en-US";
 }
 
 const activeLocale = shallowRef<Locale>(readStoredLocale());

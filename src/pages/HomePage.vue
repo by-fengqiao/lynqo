@@ -376,7 +376,6 @@ const sendBtnLabel = computed(() => {
             <span>{{ t("home.deviceName") }}</span>
             <span>{{ t("home.platform") }}</span>
             <span>{{ t("home.status") }}</span>
-            <span>{{ t("home.latency") }}</span>
           </div>
           <div
             v-for="device in devicesStore.devices"
@@ -406,9 +405,6 @@ const sendBtnLabel = computed(() => {
                 :class="device.online && device.approved ? 'status-dot--online' : 'status-dot--offline'"
               ></span>
               {{ !device.approved ? t("home.unapproved") : device.online ? t("home.online") : t("home.offline") }}
-            </span>
-            <span class="device-latency">
-              {{ device.latencyMs != null ? `${device.latencyMs}ms` : "—" }}
             </span>
           </div>
         </div>
@@ -582,7 +578,7 @@ const sendBtnLabel = computed(() => {
 
 .device-row {
   display: grid;
-  grid-template-columns: 28px 1fr 72px 72px 56px;
+  grid-template-columns: 28px 1fr 88px 100px;
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
@@ -674,11 +670,6 @@ const sendBtnLabel = computed(() => {
   background: var(--color-text-tertiary);
 }
 
-.device-latency {
-  font-size: var(--text-sm);
-  color: var(--color-text-secondary);
-  font-family: var(--font-mono);
-}
 
 /* Drop Zone */
 .drop-zone {

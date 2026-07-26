@@ -2,11 +2,27 @@
 // Leave unset for the normal paired-LAN flow, which uses the page's current
 // origin. Set it only when this web client is intentionally hosted elsewhere.
 const configuredApiBase = import.meta.env.VITE_LYNQO_API_BASE_URL?.trim();
-const BASE = configuredApiBase?.replace(/\/+$/, "") || window.location.origin;
+const runtimeOrigin = typeof window === "undefined" ? "http://localhost" : window.location.origin;
+const BASE = configuredApiBase?.replace(/\/+$/, "") || runtimeOrigin;
 
 export interface ApiError {
   code: string;
   message: string;
+}
+
+interface ApiErrorEnvelope {
+  error?: ApiError | string;
+}
+
+export function getApiErrorMessage(payload: unknown, status: number): string {
+  if (payload && typeof payload === "object" && "error" in payload) {
+    const error = (payload as ApiErrorEnvelope).error;
+    if (typeof error === "string" && error.trim()) return error;
+    if (error && typeof error === "object" && typeof error.message === "string") {
+      return error.message;
+    }
+  }
+  return `HTTP ${status}`;
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -15,10 +31,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers: { "Content-Type": "application/json", ...options?.headers },
   });
   if (!res.ok) {
-    const err = await res
-      .json()
-      .catch(() => ({ error: { code: "UNKNOWN", message: "请求失败" } }));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+    const payload: unknown = await res.json().catch(() => null);
+    throw new Error(getApiErrorMessage(payload, res.status));
   }
   return res.json();
 }
@@ -131,10 +145,8 @@ export async function uploadChunk(
     }
   );
   if (!res.ok) {
-    const err = await res
-      .json()
-      .catch(() => ({ error: { message: "上传失败" } }));
-    throw new Error(err.error?.message || `HTTP ${res.status}`);
+    const payload: unknown = await res.json().catch(() => null);
+    throw new Error(getApiErrorMessage(payload, res.status));
   }
 }
 
@@ -175,7 +187,7 @@ export function uploadChunkWithProgress(
 
       let message = `HTTP ${request.status}`;
       try {
-        message = JSON.parse(request.responseText)?.error?.message || message;
+        message = getApiErrorMessage(JSON.parse(request.responseText), request.status);
       } catch {
         // A non-JSON error response still has a useful HTTP status.
       }

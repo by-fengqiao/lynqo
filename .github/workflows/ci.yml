@@ -18,6 +18,8 @@ jobs:
         run: npm ci
       - name: TypeScript check
         run: npx vue-tsc --noEmit
+      - name: Frontend unit tests
+        run: npm run test:unit
       - name: Vite build
         run: npx vite build
       - name: Install Rust

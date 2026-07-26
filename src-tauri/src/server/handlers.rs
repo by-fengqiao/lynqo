@@ -24,6 +24,18 @@ use crate::transfer::{self, CHUNK_SIZE};
 
 const MAX_FILES_PER_TRANSFER: usize = 1_000;
 
+pub async fn api_not_found() -> (axum::http::StatusCode, Json<serde_json::Value>) {
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        Json(json!({
+            "error": {
+                "code": "API_NOT_FOUND",
+                "message": "API endpoint not found"
+            }
+        })),
+    )
+}
+
 // --- Request/Response types ---
 
 #[derive(Debug, Deserialize)]
@@ -412,80 +424,25 @@ pub async fn register_device(
     // Capture the remote peer's IP address from the connection (ISSUE 8).
     let peer_ip = addr.ip().to_string();
     let client_id = body.client_id.trim().to_string();
-
-    // A refresh is the same browser client, not a new device. First look up
-    // its durable identity; then adopt one matching legacy record so users of
-    // 1.0.4 do not need to approve the same phone again.
-    if !client_id.is_empty() {
-        let existing = {
-            let s = state.lock().await;
-            match s.db.get_device_by_client_id(&client_id)? {
-                Some(device) => Some(device),
-                None => s.db.claim_legacy_device(
-                    &client_id,
-                    &body.name,
-                    &body.platform,
-                    &body.device_type,
-                    &body.user_agent,
-                    &peer_ip,
-                )?,
-            }
-        };
-
-        if let Some(mut device) = existing {
-            {
-                let s = state.lock().await;
-                s.db.update_device_registration(
-                    &device.id,
-                    &body.name,
-                    &body.platform,
-                    &body.device_type,
-                    &body.user_agent,
-                    &peer_ip,
-                )?;
-                let _ = s.db.unhide_device(&device.id);
-            }
-
-            // Trust is a durable, explicit choice. A trusted device recovers
-            // access after a restart even if an older database row predates
-            // the trusted/approved split. An untrusted approval is left to
-            // the active WebSocket session and is revoked on final disconnect.
-            if device.trusted && !device.approved {
-                let s = state.lock().await;
-                s.db.set_device_access(&device.id, true, true)?;
-                device.approved = true;
-            }
-
-            // A remembered browser may still be awaiting approval. Re-emit the
-            // request on every registration so the desktop can recover even if
-            // the original WebSocket event was missed while it was starting.
-            if !device.approved {
-                let _ = {
-                    let s = state.lock().await;
-                    s.event_tx.send(WsEvent::DeviceApprovalRequired {
-                        device_id: device.id.clone(),
-                        name: body.name.clone(),
-                        ip: peer_ip.clone(),
-                        platform: body.platform.clone(),
-                        device_type: body.device_type.clone(),
-                        user_agent: body.user_agent.clone(),
-                    })
-                };
-            }
-
-            tracing::info!(
-                "Device registration refreshed: {} ({}) approved={}",
-                body.name,
-                device.id,
-                device.approved
-            );
-            return Ok(Json(json!({
-                "deviceId": device.id,
-                "sessionToken": device.session_token,
-                "approved": device.approved,
-                "trusted": device.trusted,
-            })));
-        }
+    let name = body.name.trim();
+    if name.is_empty() || name.chars().count() > 120 {
+        return Err(AppError::InvalidRequest(
+            "Device name must contain 1 to 120 characters".to_string(),
+        ));
+    }
+    if !(16..=128).contains(&client_id.len())
+        || !client_id
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || character == '-')
+    {
+        return Err(AppError::InvalidRequest(
+            "A valid stable client ID is required".to_string(),
+        ));
+    }
+    if body.platform.len() > 32 || body.device_type.len() > 32 || body.user_agent.len() > 1_024 {
+        return Err(AppError::InvalidRequest(
+            "Device metadata exceeds the allowed length".to_string(),
+        ));
     }
 
     let device_id = uuid::Uuid::new_v4().to_string();
@@ -509,9 +466,9 @@ pub async fn register_device(
 
     let approved = !require_approval;
 
-    let device = DeviceRecord {
+    let candidate = DeviceRecord {
         id: device_id.clone(),
-        name: body.name.clone(),
+        name: name.to_string(),
         platform: body.platform.clone(),
         device_type: body.device_type.clone(),
         user_agent: body.user_agent.clone(),
@@ -524,50 +481,41 @@ pub async fn register_device(
         last_seen: now,
     };
 
-    {
+    let (device, created) = {
         let s = state.lock().await;
-        s.db.insert_device(&device)?;
-    }
+        s.db.register_or_refresh_device(&candidate)?
+    };
 
-    // Broadcast events
-    if approved {
-        let _ = {
-            let s = state.lock().await;
-            s.event_tx.send(WsEvent::DeviceConnected {
-                device_id: device_id.clone(),
-                name: body.name.clone(),
-                platform: body.platform.clone(),
-                device_type: body.device_type.clone(),
-                ip: peer_ip.clone(),
-                approved: true,
-            })
-        };
-    } else {
+    // Re-emit a pending request on every registration. This makes the desktop
+    // recover from a missed broadcast while the stable device record and
+    // session token remain unchanged.
+    if !device.approved {
         let _ = {
             let s = state.lock().await;
             s.event_tx.send(WsEvent::DeviceApprovalRequired {
-                device_id: device_id.clone(),
-                name: body.name.clone(),
+                device_id: device.id.clone(),
+                name: device.name.clone(),
                 ip: device.ip.clone(),
-                platform: body.platform.clone(),
-                device_type: body.device_type.clone(),
-                user_agent: body.user_agent.clone(),
+                platform: device.platform.clone(),
+                device_type: device.device_type.clone(),
+                user_agent: device.user_agent.clone(),
             })
         };
     }
 
     tracing::info!(
-        "Device registered: {} ({}) approved={}",
-        body.name,
-        device_id,
-        approved
+        "Device registration {}: {} ({}) approved={}",
+        if created { "created" } else { "refreshed" },
+        device.name,
+        device.id,
+        device.approved
     );
 
     Ok(Json(json!({
-        "deviceId": device_id,
-        "sessionToken": session_token,
-        "approved": approved,
-        "trusted": false,
+        "deviceId": device.id,
+        "sessionToken": device.session_token,
+        "approved": device.approved,
+        "trusted": device.trusted,
     })))
 }
 

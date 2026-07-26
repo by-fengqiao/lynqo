@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Map1eBr1dge/lynqo/actions/workflows/ci.yml"><img src="https://github.com/Map1eBr1dge/lynqo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
+  <a href="https://github.com/by-fengqiao/lynqo/actions/workflows/ci.yml"><img src="https://github.com/by-fengqiao/lynqo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-4a32c5.svg" alt="GPL-3.0-only" /></a>
   <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white" alt="Vue 3" />
@@ -65,7 +65,7 @@ flowchart LR
 ### Run from source
 
 ```bash
-git clone https://github.com/Map1eBr1dge/lynqo.git
+git clone https://github.com/by-fengqiao/lynqo.git
 cd lynqo
 npm ci
 npm run tauri dev
@@ -85,7 +85,7 @@ On Windows, the NSIS installer is written to:
 src-tauri/target/release/bundle/nsis/
 ```
 
-Download published installers from [Releases](https://github.com/Map1eBr1dge/lynqo/releases). The publishing workflow can provide Windows (`.exe` / `.msi`), macOS (`.dmg` for Intel and Apple Silicon), and Linux x64 (`.AppImage` / `.deb`) installers. macOS and Linux packages are built by GitHub Actions on their respective operating systems.
+Download published installers from [Releases](https://github.com/by-fengqiao/lynqo/releases). The publishing workflow can provide Windows (`.exe` / `.msi`), macOS (`.dmg` for Intel and Apple Silicon), and Linux x64 (`.AppImage` / `.deb`) installers. macOS and Linux packages are built by GitHub Actions on their respective operating systems.
 
 ### Zero-configuration default
 
@@ -135,7 +135,7 @@ src-tauri/icons/     Desktop and mobile icon assets
 
 Bug reports with reproducible steps, documentation improvements, tests, and focused feature patches are welcome.
 
-1. Search [Issues](https://github.com/Map1eBr1dge/lynqo/issues) before opening a new report.
+1. Search [Issues](https://github.com/by-fengqiao/lynqo/issues) before opening a new report.
 2. Fork the repository and create a topic branch from `main`.
 3. Run the verification commands before opening a pull request.
 4. Explain the problem, the change, and the verification evidence in the pull request.
@@ -144,8 +144,8 @@ Read the full [Contribution Guide (English)](CONTRIBUTING.en.md) or [贡献指�
 
 ## 👤 Author and further information
 
-- Maintainer: [Map1eBr1dge](https://github.com/Map1eBr1dge)
-- Project home: [github.com/Map1eBr1dge/lynqo](https://github.com/Map1eBr1dge/lynqo)
+- Maintainer: [by-fengqiao](https://github.com/by-fengqiao)
+- Project home: [github.com/by-fengqiao/lynqo](https://github.com/by-fengqiao/lynqo)
 - In-app documentation: **Settings → Open-source license and agreements**
 
 ## 📄 License

@@ -13,9 +13,10 @@ import { useLocale } from "@/i18n";
 const settingsStore = useSettingsStore();
 const mobileSession = useMobileSessionStore();
 const route = useRoute();
-const { t } = useLocale();
+const { t, locale, setLocale } = useLocale();
 const {
   connectionError,
+  connectionPhase,
   isReady,
   receiveError,
   pendingReceiveTransfer,
@@ -30,11 +31,33 @@ const navItems = computed(() => [
 const hostName = ref("");
 
 const connectionLabel = computed(() => {
-  if (connectionError.value) return t("mobile.connectionFailed");
-  return isReady.value
-    ? t("mobile.connectedTo", { name: hostName.value || t("mobile.host") })
-    : t("mobile.connecting");
+  switch (connectionPhase.value) {
+    case "connected":
+      return t("mobile.connectedTo", { name: hostName.value || t("mobile.host") });
+    case "pending_approval":
+      return t("mobile.pendingApproval");
+    case "reconnecting":
+      return t("mobile.reconnecting");
+    case "rejected":
+      return t("mobile.rejected");
+    case "revoked":
+      return t("mobile.revoked");
+    case "error":
+      return t("mobile.connectionFailed");
+    default:
+      return isReady.value ? t("mobile.connecting") : t("mobile.initializing");
+  }
 });
+
+const connectionTone = computed(() => {
+  if (connectionPhase.value === "connected") return "online";
+  if (["rejected", "revoked", "error"].includes(connectionPhase.value)) return "error";
+  return "pending";
+});
+
+const canRequestAccess = computed(() =>
+  ["rejected", "revoked"].includes(connectionPhase.value)
+);
 
 onMounted(async () => {
   settingsStore.applyTheme();
@@ -86,7 +109,7 @@ function closeMenu() {
       </div>
 
       <div class="topbar-center">
-        <span class="status-dot" :class="{ 'status-dot--offline': !!connectionError }"></span>
+        <span class="status-dot" :class="`status-dot--${connectionTone}`"></span>
         <span class="status-text">{{ connectionLabel }}</span>
       </div>
 
@@ -115,6 +138,22 @@ function closeMenu() {
             <component :is="item.icon" :size="18" />
             <span>{{ item.label }}</span>
           </RouterLink>
+          <div class="menu-language" role="group" :aria-label="t('language.title')">
+            <button
+              type="button"
+              :class="{ active: locale === 'zh-CN' }"
+              @click="setLocale('zh-CN')"
+            >
+              中文
+            </button>
+            <button
+              type="button"
+              :class="{ active: locale === 'en-US' }"
+              @click="setLocale('en-US')"
+            >
+              English
+            </button>
+          </div>
         </nav>
       </div>
     </Teleport>
@@ -122,6 +161,12 @@ function closeMenu() {
     <!-- Main Content -->
     <main class="mobile-content">
       <p v-if="connectionError" class="session-error">{{ connectionError }}</p>
+      <div v-if="canRequestAccess" class="access-retry">
+        <p>{{ t("mobile.accessRequired") }}</p>
+        <button type="button" @click="mobileSession.requestAccess()">
+          {{ t("mobile.requestAccess") }}
+        </button>
+      </div>
       <p v-if="receiveError" class="session-error">{{ receiveError }}</p>
       <RouterView />
     </main>
@@ -190,11 +235,19 @@ function closeMenu() {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
+  background: var(--color-state-warning);
+}
+
+.status-dot--online {
   background: var(--color-state-success);
 }
 
-.status-dot--offline {
+.status-dot--error {
   background: var(--color-state-error);
+}
+
+.status-dot--pending {
+  background: var(--color-state-warning);
 }
 
 .status-text {
@@ -278,6 +331,31 @@ function closeMenu() {
   background: var(--color-brand-primary-soft);
 }
 
+.menu-language {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: 5px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.menu-language button {
+  min-height: 34px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font: inherit;
+  font-size: var(--text-xs);
+}
+
+.menu-language button.active {
+  background: var(--color-brand-primary-soft);
+  color: var(--color-text-brand);
+  font-weight: var(--weight-medium);
+}
+
 .mobile-content {
   max-width: 375px;
   margin: 0 auto;
@@ -294,5 +372,29 @@ function closeMenu() {
   color: var(--color-state-error);
   font-size: var(--text-sm);
   line-height: 1.5;
+}
+
+.access-retry {
+  margin: 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--color-state-warning-soft);
+  color: var(--color-text-secondary);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.access-retry p {
+  margin: 0 0 8px;
+}
+
+.access-retry button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--color-brand-primary);
+  color: #fff;
+  font: inherit;
 }
 </style>

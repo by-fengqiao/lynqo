@@ -12,7 +12,6 @@ export interface Device {
   approved: boolean;
   /** Explicitly persisted by the desktop user. Trusted devices auto-approve on reconnect. */
   trusted: boolean;
-  latencyMs?: number;
   lastSeenAt: string;
 }
 
@@ -70,7 +69,6 @@ export interface TransferTask {
   chunkTotal?: number;
   chunkDone?: number;
   chunkSize?: number;
-  latencyMs?: number;
   startedAt?: string;
   retryCount?: number;
   protocol?: string;

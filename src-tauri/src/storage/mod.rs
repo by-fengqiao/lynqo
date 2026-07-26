@@ -190,6 +190,25 @@ pub struct Database {
     conn: Mutex<Connection>,
 }
 
+fn table_has_column(conn: &Connection, table: &str, column: &str) -> AppResult<bool> {
+    let mut stmt = conn
+        .prepare(&format!("PRAGMA table_info({table})"))
+        .map_err(|e| AppError::Database(format!("Read schema for {table} failed: {e}")))?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| AppError::Database(format!("Query schema for {table} failed: {e}")))?;
+
+    for existing in columns {
+        if existing
+            .map_err(|e| AppError::Database(format!("Read column for {table} failed: {e}")))?
+            == column
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 impl Database {
     pub fn open(db_path: &Path) -> AppResult<Self> {
         if let Some(parent) = db_path.parent() {
@@ -214,12 +233,16 @@ impl Database {
     }
 
     fn migrate(&self) -> AppResult<()> {
-        let conn = self
+        let mut conn = self
             .conn
             .lock()
             .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
 
-        conn.execute_batch(
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("Begin migration failed: {}", e)))?;
+
+        tx.execute_batch(
             "CREATE TABLE IF NOT EXISTS devices (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -322,41 +345,52 @@ impl Database {
                 timestamp TEXT NOT NULL,
                 payload_json TEXT NOT NULL DEFAULT '{}',
                 FOREIGN KEY (transfer_id) REFERENCES transfers(id)
-            );
-
-            CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id, chunk_index);
-            CREATE INDEX IF NOT EXISTS idx_transfer_files_transfer ON transfer_files(transfer_id);
-            CREATE INDEX IF NOT EXISTS idx_transfers_device ON transfers(device_id);
-            CREATE INDEX IF NOT EXISTS idx_transfers_target ON transfers(target_device_id);
-            CREATE INDEX IF NOT EXISTS idx_download_sessions_token ON download_sessions(token);
-            CREATE INDEX IF NOT EXISTS idx_relay_files_transfer ON relay_files(transfer_id);
-            CREATE INDEX IF NOT EXISTS idx_transfer_events_transfer ON transfer_events(transfer_id);",
+            );",
         )
         .map_err(|e| AppError::Database(format!("Migration failed: {}", e)))?;
 
-        // Idempotent ALTER TABLE: add new columns to transfers if they don't exist yet.
-        // SQLite raises "duplicate column name" if the column already exists, so we
-        // intentionally ignore errors here.
-        let alter_statements = [
-            "ALTER TABLE devices ADD COLUMN client_id TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE devices ADD COLUMN trusted INTEGER NOT NULL DEFAULT 0",
-            "ALTER TABLE transfers ADD COLUMN target_device_id TEXT",
-            "ALTER TABLE transfers ADD COLUMN relay_stage TEXT",
-            "ALTER TABLE transfers ADD COLUMN accepted_at TEXT",
-            "ALTER TABLE transfers ADD COLUMN expires_at TEXT",
-            "ALTER TABLE transfers ADD COLUMN paused_at TEXT",
-            "ALTER TABLE download_sessions ADD COLUMN completed INTEGER NOT NULL DEFAULT 0",
+        // Existing databases must gain their columns before any index refers to
+        // them. Checking the schema explicitly also prevents a real ALTER error
+        // from being silently mistaken for an already-migrated column.
+        let columns = [
+            ("devices", "client_id", "TEXT NOT NULL DEFAULT ''"),
+            ("devices", "trusted", "INTEGER NOT NULL DEFAULT 0"),
+            ("transfers", "target_device_id", "TEXT"),
+            ("transfers", "relay_stage", "TEXT"),
+            ("transfers", "accepted_at", "TEXT"),
+            ("transfers", "expires_at", "TEXT"),
+            ("transfers", "paused_at", "TEXT"),
+            (
+                "download_sessions",
+                "completed",
+                "INTEGER NOT NULL DEFAULT 0",
+            ),
         ];
-        for stmt in &alter_statements {
-            let _ = conn.execute(stmt, []);
+        for (table, column, definition) in columns {
+            if !table_has_column(&tx, table, column)? {
+                tx.execute(
+                    &format!("ALTER TABLE {table} ADD COLUMN {column} {definition}"),
+                    [],
+                )
+                .map_err(|e| {
+                    AppError::Database(format!("Add migration column {table}.{column} failed: {e}"))
+                })?;
+            }
         }
 
-        conn.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_client_id
-             ON devices(client_id) WHERE client_id <> ''",
-            [],
+        tx.execute_batch(
+            "CREATE INDEX IF NOT EXISTS idx_chunks_file ON chunks(file_id, chunk_index);
+             CREATE INDEX IF NOT EXISTS idx_transfer_files_transfer ON transfer_files(transfer_id);
+             CREATE INDEX IF NOT EXISTS idx_transfers_device ON transfers(device_id);
+             CREATE INDEX IF NOT EXISTS idx_transfers_target ON transfers(target_device_id);
+             CREATE INDEX IF NOT EXISTS idx_download_sessions_token ON download_sessions(token);
+             CREATE INDEX IF NOT EXISTS idx_relay_files_transfer ON relay_files(transfer_id);
+             CREATE INDEX IF NOT EXISTS idx_transfer_events_transfer ON transfer_events(transfer_id);
+             CREATE UNIQUE INDEX IF NOT EXISTS idx_devices_client_id
+             ON devices(client_id) WHERE client_id <> '';
+             PRAGMA user_version = 2;",
         )
-        .map_err(|e| AppError::Database(format!("Create device identity index failed: {}", e)))?;
+        .map_err(|e| AppError::Database(format!("Create migration indexes failed: {}", e)))?;
 
         // Ensure a synthetic "desktop" device exists so that desktop-initiated
         // transfers (which have no remote device) satisfy the FK constraint.
@@ -364,11 +398,15 @@ impl Database {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs().to_string())
             .unwrap_or_default();
-        let _ = conn.execute(
+        tx.execute(
             "INSERT OR IGNORE INTO devices (id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen)
              VALUES ('desktop', 'This PC', 'desktop', 'desktop', '', '', 'desktop-internal-token', 1, 1, '127.0.0.1', ?1, ?2)",
             params![now, now],
-        );
+        )
+        .map_err(|e| AppError::Database(format!("Create desktop identity failed: {}", e)))?;
+
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("Commit migration failed: {}", e)))?;
 
         Ok(())
     }
@@ -547,6 +585,118 @@ impl Database {
         Ok(())
     }
 
+    /// Atomically reuse, claim, or create a browser device. Holding one
+    /// database transaction across the lookup and insert removes the refresh
+    /// race that previously surfaced as a unique-index HTTP 500.
+    pub fn register_or_refresh_device(
+        &self,
+        candidate: &DeviceRecord,
+    ) -> AppResult<(DeviceRecord, bool)> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("Begin device registration failed: {}", e)))?;
+
+        let mut existing = None;
+        if !candidate.client_id.is_empty() {
+            existing = tx
+                .query_row(
+                    "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                     FROM devices WHERE client_id = ?1 AND id <> 'desktop'",
+                    params![candidate.client_id],
+                    device_from_row,
+                )
+                .optional()
+                .map_err(|e| AppError::Database(format!("Query device identity failed: {}", e)))?;
+
+            if existing.is_none() {
+                existing = tx
+                    .query_row(
+                        "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                         FROM devices
+                         WHERE id <> 'desktop' AND client_id = '' AND name = ?1 AND platform = ?2
+                           AND device_type = ?3 AND user_agent = ?4 AND ip = ?5
+                         ORDER BY approved DESC, last_seen DESC LIMIT 1",
+                        params![
+                            candidate.name,
+                            candidate.platform,
+                            candidate.device_type,
+                            candidate.user_agent,
+                            candidate.ip
+                        ],
+                        device_from_row,
+                    )
+                    .optional()
+                    .map_err(|e| AppError::Database(format!("Query legacy device failed: {}", e)))?;
+            }
+        }
+
+        if let Some(existing) = existing {
+            let approved = existing.approved || existing.trusted;
+            tx.execute(
+                "UPDATE devices
+                 SET name = ?1, platform = ?2, device_type = ?3, user_agent = ?4,
+                     client_id = ?5, ip = ?6, last_seen = ?7, approved = ?8
+                 WHERE id = ?9",
+                params![
+                    candidate.name,
+                    candidate.platform,
+                    candidate.device_type,
+                    candidate.user_agent,
+                    candidate.client_id,
+                    candidate.ip,
+                    candidate.last_seen,
+                    approved as i32,
+                    existing.id,
+                ],
+            )
+            .map_err(|e| AppError::Database(format!("Refresh device failed: {}", e)))?;
+            tx.execute(
+                "DELETE FROM hidden_devices WHERE device_id = ?1",
+                params![existing.id],
+            )
+            .map_err(|e| AppError::Database(format!("Restore device visibility failed: {}", e)))?;
+
+            let refreshed = tx
+                .query_row(
+                    "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                     FROM devices WHERE id = ?1",
+                    params![existing.id],
+                    device_from_row,
+                )
+                .map_err(|e| AppError::Database(format!("Read refreshed device failed: {}", e)))?;
+            tx.commit()
+                .map_err(|e| AppError::Database(format!("Commit device refresh failed: {}", e)))?;
+            return Ok((refreshed, false));
+        }
+
+        tx.execute(
+            "INSERT INTO devices (id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            params![
+                candidate.id,
+                candidate.name,
+                candidate.platform,
+                candidate.device_type,
+                candidate.user_agent,
+                candidate.client_id,
+                candidate.session_token,
+                candidate.approved as i32,
+                candidate.trusted as i32,
+                candidate.ip,
+                candidate.created_at,
+                candidate.last_seen,
+            ],
+        )
+        .map_err(|e| AppError::Database(format!("Insert device failed: {}", e)))?;
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("Commit device registration failed: {}", e)))?;
+        Ok((candidate.clone(), true))
+    }
+
     /// Return a display-safe list with stale records from the same browser
     /// collapsed. The underlying records are preserved for transfer history.
     pub fn list_visible_devices(&self) -> AppResult<Vec<DeviceRecord>> {
@@ -567,20 +717,29 @@ impl Database {
                 .map_err(|e| AppError::Database(format!("Collect hidden devices failed: {}", e)))?;
             rows
         };
+        let stored_devices = self.list_devices()?;
+        let claimed_fingerprints: std::collections::HashSet<String> = stored_devices
+            .iter()
+            .filter(|device| !device.client_id.is_empty())
+            .map(device_fingerprint)
+            .collect();
         let mut visible: HashMap<String, DeviceRecord> = HashMap::new();
-        for device in self.list_devices()? {
+        for device in stored_devices {
             if hidden_ids.contains(&device.id) {
                 continue;
             }
-            // Keep a newly claimed client record and its old pre-identity
-            // siblings in the same display group until the stale rows age
-            // out. The database identity remains client_id; this is only a
-            // conservative UI cleanup key for records with the same browser
-            // fingerprint and LAN address.
-            let key = format!(
-                "browser|{}|{}|{}|{}|{}",
-                device.ip, device.name, device.platform, device.device_type, device.user_agent
-            );
+            let fingerprint = device_fingerprint(&device);
+            // Once a stable browser identity has claimed a legacy fingerprint,
+            // hide its pre-identity siblings. Distinct non-empty client IDs are
+            // never collapsed, even if two phones share a model, IP, and UA.
+            if device.client_id.is_empty() && claimed_fingerprints.contains(&fingerprint) {
+                continue;
+            }
+            let key = if device.client_id.is_empty() {
+                format!("legacy|{fingerprint}")
+            } else {
+                format!("client|{}", device.client_id)
+            };
 
             match visible.get(&key) {
                 Some(existing)
@@ -644,6 +803,76 @@ impl Database {
             return Err(AppError::DeviceNotFound);
         }
 
+        Ok(())
+    }
+
+    /// End every non-trusted authorization left by a previous service
+    /// session. Trusted devices remain approved until the user revokes them.
+    pub fn revoke_untrusted_device_access(&self) -> AppResult<Vec<String>> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("Begin access reset failed: {}", e)))?;
+
+        let device_ids = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT id FROM devices
+                     WHERE id <> 'desktop' AND approved = 1 AND trusted = 0",
+                )
+                .map_err(|e| AppError::Database(format!("Prepare access reset failed: {}", e)))?;
+            let rows = stmt
+                .query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| AppError::Database(format!("Query access reset failed: {}", e)))?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| AppError::Database(format!("Collect access reset failed: {}", e)))?;
+            rows
+        };
+
+        tx.execute(
+            "UPDATE devices SET approved = 0
+             WHERE id <> 'desktop' AND approved = 1 AND trusted = 0",
+            [],
+        )
+        .map_err(|e| AppError::Database(format!("Reset one-time access failed: {}", e)))?;
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("Commit access reset failed: {}", e)))?;
+        Ok(device_ids)
+    }
+
+    /// Removing a device is a security action: revoke its session approval and
+    /// trust in the same transaction before hiding the historical record.
+    pub fn forget_device(&self, device_id: &str) -> AppResult<()> {
+        if device_id == "desktop" {
+            return Err(AppError::DeviceNotFound);
+        }
+
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("Begin device removal failed: {}", e)))?;
+        let updated = tx
+            .execute(
+                "UPDATE devices SET approved = 0, trusted = 0 WHERE id = ?1",
+                params![device_id],
+            )
+            .map_err(|e| AppError::Database(format!("Revoke device failed: {}", e)))?;
+        if updated == 0 {
+            return Err(AppError::DeviceNotFound);
+        }
+        tx.execute(
+            "INSERT OR REPLACE INTO hidden_devices (device_id, hidden_at) VALUES (?1, ?2)",
+            params![device_id, chrono_now()],
+        )
+        .map_err(|e| AppError::Database(format!("Hide device failed: {}", e)))?;
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("Commit device removal failed: {}", e)))?;
         Ok(())
     }
 
@@ -1612,6 +1841,13 @@ fn chrono_now() -> String {
     format!("{}", secs)
 }
 
+fn device_fingerprint(device: &DeviceRecord) -> String {
+    format!(
+        "{}|{}|{}|{}|{}",
+        device.ip, device.name, device.platform, device.device_type, device.user_agent
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1678,6 +1914,64 @@ mod tests {
     }
 
     #[test]
+    fn migrates_legacy_transfers_before_creating_target_index() {
+        let path = test_db_path("legacy-transfers");
+        let legacy = Connection::open(&path).unwrap();
+        legacy
+            .execute_batch(
+                "CREATE TABLE devices (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    platform TEXT NOT NULL DEFAULT '',
+                    device_type TEXT NOT NULL DEFAULT '',
+                    user_agent TEXT NOT NULL DEFAULT '',
+                    session_token TEXT NOT NULL UNIQUE,
+                    approved INTEGER NOT NULL DEFAULT 0,
+                    ip TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL,
+                    last_seen TEXT NOT NULL
+                );
+                CREATE TABLE transfers (
+                    id TEXT PRIMARY KEY,
+                    device_id TEXT NOT NULL,
+                    direction TEXT NOT NULL DEFAULT 'receive',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    total_bytes INTEGER NOT NULL DEFAULT 0,
+                    transferred_bytes INTEGER NOT NULL DEFAULT 0,
+                    file_count INTEGER NOT NULL DEFAULT 0,
+                    save_path TEXT,
+                    created_at TEXT NOT NULL,
+                    completed_at TEXT
+                );",
+            )
+            .unwrap();
+        drop(legacy);
+
+        let db = Database::open(&path).unwrap();
+        let conn = db.conn.lock().unwrap();
+        assert!(table_has_column(&conn, "transfers", "target_device_id").unwrap());
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i32>(0))
+                .unwrap(),
+            2
+        );
+        let target_index: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_transfers_target'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(target_index, 1);
+        drop(conn);
+        drop(db);
+
+        // Reopening an already-migrated database must be a no-op.
+        Database::open(&path).unwrap();
+    }
+
+    #[test]
     fn legacy_duplicates_collapse_and_keep_the_existing_approval() {
         let db = Database::open(&test_db_path("identity")).unwrap();
         db.insert_device(&device("older-approved", true, true, "10"))
@@ -1731,5 +2025,88 @@ mod tests {
         let revoked = db.get_device_by_id("phone").unwrap().unwrap();
         assert!(!revoked.approved);
         assert!(!revoked.trusted);
+    }
+
+    #[test]
+    fn one_time_access_expires_at_service_boundary() {
+        let db = Database::open(&test_db_path("one-time-access")).unwrap();
+        db.insert_device(&device("temporary", true, false, "1"))
+            .unwrap();
+        db.insert_device(&device("trusted", true, true, "2"))
+            .unwrap();
+
+        let revoked = db.revoke_untrusted_device_access().unwrap();
+        assert_eq!(revoked, vec!["temporary"]);
+        assert!(!db.get_device_by_id("temporary").unwrap().unwrap().approved);
+        assert!(db.get_device_by_id("trusted").unwrap().unwrap().approved);
+    }
+
+    #[test]
+    fn forgetting_a_device_revokes_access_before_hiding_it() {
+        let db = Database::open(&test_db_path("forget-device")).unwrap();
+        db.insert_device(&device("phone", true, true, "1")).unwrap();
+
+        db.forget_device("phone").unwrap();
+        let stored = db.get_device_by_id("phone").unwrap().unwrap();
+        assert!(!stored.approved);
+        assert!(!stored.trusted);
+        assert!(db
+            .list_visible_devices()
+            .unwrap()
+            .into_iter()
+            .all(|entry| entry.id != "phone"));
+    }
+
+    #[test]
+    fn distinct_stable_clients_with_same_fingerprint_remain_visible() {
+        let db = Database::open(&test_db_path("distinct-clients")).unwrap();
+        let mut first = device("first", true, true, "1");
+        first.client_id = "client-first".to_string();
+        let mut second = device("second", true, true, "2");
+        second.client_id = "client-second".to_string();
+        db.insert_device(&first).unwrap();
+        db.insert_device(&second).unwrap();
+
+        let visible: Vec<_> = db
+            .list_visible_devices()
+            .unwrap()
+            .into_iter()
+            .filter(|entry| entry.id != "desktop")
+            .collect();
+        assert_eq!(visible.len(), 2);
+    }
+
+    #[test]
+    fn concurrent_registration_reuses_one_stable_device() {
+        let db = std::sync::Arc::new(Database::open(&test_db_path("concurrent-register")).unwrap());
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
+        let handles: Vec<_> = ["first", "second"]
+            .into_iter()
+            .map(|id| {
+                let db = db.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut candidate = device(id, false, false, "1");
+                    candidate.client_id = "one-stable-client".to_string();
+                    barrier.wait();
+                    db.register_or_refresh_device(&candidate).unwrap().0
+                })
+            })
+            .collect();
+        barrier.wait();
+
+        let registered: Vec<_> = handles
+            .into_iter()
+            .map(|handle| handle.join().unwrap())
+            .collect();
+        assert_eq!(registered[0].id, registered[1].id);
+        assert_eq!(
+            db.list_devices()
+                .unwrap()
+                .into_iter()
+                .filter(|entry| entry.client_id == "one-stable-client")
+                .count(),
+            1
+        );
     }
 }

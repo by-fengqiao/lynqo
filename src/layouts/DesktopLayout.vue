@@ -60,7 +60,6 @@ onUnmounted(() => {
 
 function openConnectPanel() {
   showConnectPanel.value = true;
-  appStore.refreshQrCode();
 }
 
 // Let nested pages (e.g. HomePage) open the connect panel
@@ -68,9 +67,6 @@ provide(openConnectPanelKey, openConnectPanel);
 
 function handleConnectDevice() {
   showConnectPanel.value = !showConnectPanel.value;
-  if (showConnectPanel.value) {
-    appStore.refreshQrCode();
-  }
   emit("connect-device");
 }
 

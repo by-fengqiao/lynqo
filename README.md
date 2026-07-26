@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Map1eBr1dge/lynqo/actions/workflows/ci.yml"><img src="https://github.com/Map1eBr1dge/lynqo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态" /></a>
+  <a href="https://github.com/by-fengqiao/lynqo/actions/workflows/ci.yml"><img src="https://github.com/by-fengqiao/lynqo/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-4a32c5.svg" alt="GPL-3.0-only" /></a>
   <img src="https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white" alt="Tauri v2" />
   <img src="https://img.shields.io/badge/Vue-3-42b883?logo=vuedotjs&logoColor=white" alt="Vue 3" />
@@ -65,7 +65,7 @@ flowchart LR
 ### 从源码运行
 
 ```bash
-git clone https://github.com/Map1eBr1dge/lynqo.git
+git clone https://github.com/by-fengqiao/lynqo.git
 cd lynqo
 npm ci
 npm run tauri dev
@@ -85,7 +85,7 @@ Windows 安装包会生成在：
 src-tauri/target/release/bundle/nsis/
 ```
 
-发布版请从 [Releases](https://github.com/Map1eBr1dge/lynqo/releases) 下载。发布工作流可提供 Windows（`.exe` / `.msi`）、macOS（Intel 与 Apple 芯片的 `.dmg`）以及 Linux x64（`.AppImage` / `.deb`）安装包；macOS 和 Linux 安装包由 GitHub Actions 在对应系统上构建。
+发布版请从 [Releases](https://github.com/by-fengqiao/lynqo/releases) 下载。发布工作流可提供 Windows（`.exe` / `.msi`）、macOS（Intel 与 Apple 芯片的 `.dmg`）以及 Linux x64（`.AppImage` / `.deb`）安装包；macOS 和 Linux 安装包由 GitHub Actions 在对应系统上构建。
 
 ### 零配置默认值
 
@@ -135,7 +135,7 @@ src-tauri/icons/     桌面与移动端图标资源
 
 欢迎提交 Bug 报告、可复现步骤、文档改进、测试或功能补丁。
 
-1. 先在 [Issues](https://github.com/Map1eBr1dge/lynqo/issues) 搜索是否已有相同问题。
+1. 先在 [Issues](https://github.com/by-fengqiao/lynqo/issues) 搜索是否已有相同问题。
 2. Fork 仓库并从 `main` 创建主题分支。
 3. 提交前运行上面的验证命令。
 4. 创建 Pull Request，清晰说明问题、改动和验证结果。
@@ -144,8 +144,8 @@ src-tauri/icons/     桌面与移动端图标资源
 
 ## 👤 作者与了解更多
 
-- 发起与维护：[Map1eBr1dge](https://github.com/Map1eBr1dge)
-- 项目主页：[github.com/Map1eBr1dge/lynqo](https://github.com/Map1eBr1dge/lynqo)
+- 发起与维护：[by-fengqiao](https://github.com/by-fengqiao)
+- 项目主页：[github.com/by-fengqiao/lynqo](https://github.com/by-fengqiao/lynqo)
 - 产品内说明：设置 → 开源许可与协议
 
 ## 📄 许可证

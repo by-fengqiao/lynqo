@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 任务展开详情面板（设计稿 任务展开详情.html）
-// 显示：分片进度、网络延迟、开始时间、文件校验、重试次数、保存目录、文件大小、分片大小、传输协议
+// 显示：分片进度、开始时间、文件校验、重试次数、保存目录、文件大小、分片大小、传输协议
 import { computed } from "vue";
 import type { TransferTask } from "@/types";
 import { formatBytes, formatClock } from "@/utils/format";
@@ -33,10 +33,6 @@ const chunkDone = computed(() => props.task.chunkDone ?? 0);
       <div class="grid gap-x-8 gap-y-2" style="grid-template-columns: 1fr 1fr">
         <!-- Left Column -->
         <div>
-          <div class="flex items-center justify-between mb-2">
-            <span class="detail-label">网络延迟</span>
-            <span class="detail-value">{{ task.latencyMs != null ? `${task.latencyMs}ms` : "未测量" }}</span>
-          </div>
           <div class="flex items-center justify-between mb-2">
             <span class="detail-label">开始时间</span>
             <span class="detail-value">{{ formatClock(task.startedAt) }}</span>

@@ -2,7 +2,7 @@
   "name": "lynqo",
   "author": "Map1eBr1dge",
   "private": true,
-  "version": "26.1.6",
+  "version": "26.1.7",
   "license": "GPL-3.0-only",
   "type": "module",
   "scripts": {
@@ -11,8 +11,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "vue-tsc --noEmit",
+    "test:unit": "vitest run",
     "lint": "echo 'no linter configured'",
-    "test": "npm run typecheck && cargo test --manifest-path src-tauri/Cargo.toml"
+    "test": "npm run typecheck && npm run test:unit && cargo test --manifest-path src-tauri/Cargo.toml"
   },
   "dependencies": {
     "@tauri-apps/plugin-dialog": "^2.7.2",
@@ -28,6 +29,7 @@
     "@vitejs/plugin-vue": "^5.2.3",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",
-    "vue-tsc": "^2.2.10"
+    "vitest": "^3.2.4",
+    "vue-tsc": "^3.3.8"
   }
 }

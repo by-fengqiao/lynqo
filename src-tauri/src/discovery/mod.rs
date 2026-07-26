@@ -1,4 +1,5 @@
 use mdns_sd::{ServiceDaemon, ServiceInfo};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::net::IpAddr;
 
@@ -7,6 +8,44 @@ use std::net::IpAddr;
 pub struct MdnsGuard {
     daemon: ServiceDaemon,
     fullname: String,
+}
+
+/// Return the exact DNS-safe host label used by both mDNS registration and
+/// connection information shown to the user.
+pub fn safe_host_label(device_name: &str) -> String {
+    let mut safe_name = String::new();
+    let mut previous_was_separator = false;
+    for character in device_name.chars() {
+        if character.is_ascii_alphanumeric() {
+            safe_name.push(character.to_ascii_lowercase());
+            previous_was_separator = false;
+        } else if !safe_name.is_empty() && !previous_was_separator {
+            safe_name.push('-');
+            previous_was_separator = true;
+        }
+    }
+    let safe_name = safe_name.trim_matches('-');
+    let base = if safe_name.is_empty() {
+        "lynqo-device"
+    } else {
+        safe_name
+    };
+    let digest = Sha256::digest(device_name.as_bytes());
+    let suffix = format!(
+        "{:02x}{:02x}{:02x}{:02x}",
+        digest[0], digest[1], digest[2], digest[3]
+    );
+    // DNS labels are limited to 63 octets. The slug is ASCII, so truncating
+    // by characters is also byte-safe. A stable suffix prevents non-ASCII
+    // names from all collapsing to the same `lynqo-device` label.
+    let max_base_len = 63 - 1 - suffix.len();
+    let base = base
+        .chars()
+        .take(max_base_len)
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string();
+    format!("{base}-{suffix}")
 }
 
 impl MdnsGuard {
@@ -23,23 +62,7 @@ impl MdnsGuard {
         let daemon =
             ServiceDaemon::new().map_err(|e| format!("Failed to create mDNS daemon: {}", e))?;
 
-        // Sanitize device name for mDNS (replace spaces and special chars with hyphens)
-        let safe_name: String = device_name
-            .chars()
-            .map(|c| {
-                if c.is_alphanumeric() || c == '-' {
-                    c
-                } else {
-                    '-'
-                }
-            })
-            .collect();
-        let safe_name = safe_name.trim_matches('-').to_string();
-        let safe_name = if safe_name.is_empty() {
-            "lynqo-device".to_string()
-        } else {
-            safe_name
-        };
+        let safe_name = safe_host_label(device_name);
 
         let service_type = "_lynqo._tcp.local.";
         let instance_name = format!("{}.{}", safe_name, service_type);
@@ -95,5 +118,21 @@ impl Drop for MdnsGuard {
         if let Err(e) = self.daemon.shutdown() {
             tracing::error!("Failed to shutdown mDNS daemon: {}", e);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::safe_host_label;
+
+    #[test]
+    fn host_label_is_stable_and_dns_safe() {
+        let ascii = safe_host_label("Feng Qiao's PC");
+        assert!(ascii.starts_with("feng-qiao-s-pc-"));
+        assert_eq!(ascii, safe_host_label("Feng Qiao's PC"));
+        assert!(safe_host_label("  ").starts_with("lynqo-device-"));
+        assert_ne!(safe_host_label("风桥"), safe_host_label("林桥"));
+        assert!(safe_host_label(&"a".repeat(200)).len() <= 63);
+        assert!(safe_host_label("LYNQO-01").starts_with("lynqo-01-"));
     }
 }

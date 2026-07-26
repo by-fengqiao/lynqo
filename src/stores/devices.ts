@@ -43,7 +43,6 @@ export const useDevicesStore = defineStore("devices", () => {
       online: payload.online ?? defaults.online ?? true,
       approved: payload.approved ?? defaults.approved ?? false,
       trusted: payload.trusted ?? defaults.trusted ?? false,
-      latencyMs: payload.latencyMs ?? defaults.latencyMs,
       lastSeenAt: payload.lastSeenAt ?? defaults.lastSeenAt ?? new Date().toISOString(),
     };
   }
@@ -237,7 +236,6 @@ export const useDevicesStore = defineStore("devices", () => {
       const device = devices.value.find((d) => d.id === id);
       if (device) {
         device.online = false;
-        device.latencyMs = undefined;
       }
       dismissedApprovalIds.delete(id);
       // The device explicitly disconnected, so do not leave a stale global

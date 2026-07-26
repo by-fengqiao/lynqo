@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, onBeforeUnmount, watch } from "vue";
 import { storeToRefs } from "pinia";
 import {
   ChevronRight,
@@ -27,9 +27,11 @@ import type { UploadProgress } from "@/services/upload";
 import DeviceSelectorSheet from "@/components/overlays/DeviceSelectorSheet.vue";
 import { useMobileSessionStore } from "@/stores/mobileSession";
 import type { Device } from "@/types";
+import { useLocale } from "@/i18n";
 
 const devicesStore = useDevicesStore();
 const settingsStore = useSettingsStore();
+const { t } = useLocale();
 const sizeWarning = ref("");
 
 const showDeviceSheet = ref(false);
@@ -47,7 +49,8 @@ const relayStatus = ref<string | null>(null);
 
 let uploader: FileUploader | null = null;
 const mobileSession = useMobileSessionStore();
-const { sessionToken, deviceId, isApproved } = storeToRefs(mobileSession);
+const { sessionToken, deviceId, isApproved, connectionPhase } = storeToRefs(mobileSession);
+let deviceRefreshTimer: ReturnType<typeof window.setInterval> | null = null;
 
 // Real file input
 const fileInputRef = ref<HTMLInputElement | null>(null);
@@ -103,12 +106,22 @@ watch(
   ([token, approved]) => {
     if (token && approved) {
       void loadAvailableDevices(token);
+      if (deviceRefreshTimer !== null) window.clearInterval(deviceRefreshTimer);
+      deviceRefreshTimer = window.setInterval(() => void loadAvailableDevices(token), 5000);
     } else {
+      if (deviceRefreshTimer !== null) {
+        window.clearInterval(deviceRefreshTimer);
+        deviceRefreshTimer = null;
+      }
       devicesStore.setDevices([]);
     }
   },
   { immediate: true }
 );
+
+onBeforeUnmount(() => {
+  if (deviceRefreshTimer !== null) window.clearInterval(deviceRefreshTimer);
+});
 
 function triggerFileInput() {
   fileInputRef.value?.click();
@@ -234,8 +247,7 @@ function getDeviceMeta(): string {
   };
   const platform = platformMap[d.platform] || d.platform;
   const status = d.online ? "在线" : "离线";
-  const latency = d.latencyMs != null ? ` · ${d.latencyMs}ms` : "";
-  return `${platform} · ${status}${latency}`;
+  return `${platform} · ${status}`;
 }
 
 async function handleSend() {
@@ -381,7 +393,7 @@ async function handleCancel() {
     <!-- Title Section -->
     <section class="title-section">
       <h1 class="page-title">发送文件</h1>
-      <p class="page-subtitle">通过 Studio Wi-Fi 发送到附近设备。</p>
+      <p class="page-subtitle">{{ t("mobile.sendSubtitle") }}</p>
     </section>
 
     <!-- Device Selector -->
@@ -401,8 +413,11 @@ async function handleCancel() {
       </button>
     </section>
 
-    <p v-if="sessionToken && !isApproved" class="approval-wait">
-      等待电脑端授权，授权后此页面会自动更新。
+    <p
+      v-if="sessionToken && !isApproved && connectionPhase === 'pending_approval'"
+      class="approval-wait"
+    >
+      {{ t("mobile.waitingApprovalHint") }}
     </p>
 
     <!-- File Selection Area -->

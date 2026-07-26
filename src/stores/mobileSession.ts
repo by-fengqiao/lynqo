@@ -10,6 +10,7 @@ import {
   validateToken,
 } from "@/services/api";
 import { wsClient } from "@/services/websocket";
+import { translate } from "@/i18n";
 
 export interface IncomingTransfer {
   id: string;
@@ -19,11 +20,15 @@ export interface IncomingTransfer {
   expiresAt?: string;
 }
 
-interface StoredMobileSession {
-  sessionToken: string;
-  deviceId: string;
-  approved: boolean;
-}
+export type MobileConnectionPhase =
+  | "initializing"
+  | "pending_approval"
+  | "connecting"
+  | "connected"
+  | "reconnecting"
+  | "rejected"
+  | "revoked"
+  | "error";
 
 interface RegistrationResponse {
   sessionToken?: string;
@@ -33,34 +38,32 @@ interface RegistrationResponse {
 
 const MOBILE_CLIENT_ID_KEY = "lynqo-mobile-client-id";
 let transientClientIdSequence = 0;
+let transientClientId: string | null = null;
 
 interface UserAgentDataLike {
   getHighEntropyValues?: (hints: string[]) => Promise<{ model?: string }>;
 }
 
-/**
- * The single source of truth for a browser-based phone connection.
- *
- * Mobile routes share one identity, one authorization state, and one incoming
- * transfer queue. Keeping this state in a Pinia store prevents route changes
- * from accidentally creating new device records or losing receive prompts.
- */
 export const useMobileSessionStore = defineStore("mobileSession", () => {
   const sessionToken = shallowRef<string | null>(null);
   const deviceId = shallowRef<string | null>(null);
   const isApproved = shallowRef(false);
   const isReady = shallowRef(false);
+  const connectionPhase = shallowRef<MobileConnectionPhase>("initializing");
   const connectionError = shallowRef<string | null>(null);
   const receiveError = shallowRef<string | null>(null);
   const pendingReceiveTransfer = shallowRef<IncomingTransfer | null>(null);
   const showReceiveDialog = shallowRef(false);
 
   let pairingToken = "";
-  let storageKey = "";
   let socketToken = "";
+  let socketConnected = false;
+  let explicitRejection = false;
+  let approvalSyncInFlight = false;
   let approvalPollTimer: ReturnType<typeof window.setInterval> | null = null;
-  let initialization: Promise<void> | null = null;
+  let initializationVersion = 0;
   let listenersBound = false;
+  let visibilityListenerBound = false;
 
   function getAndroidModelFromUserAgent(userAgent: string): string | null {
     const match = userAgent.match(
@@ -73,25 +76,23 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
   async function getBrowserDeviceName(clientId: string): Promise<string> {
     const ua = navigator.userAgent;
     if (/Android/.test(ua)) {
-      const userAgentData = (navigator as Navigator & { userAgentData?: UserAgentDataLike }).userAgentData;
+      const userAgentData = (navigator as Navigator & { userAgentData?: UserAgentDataLike })
+        .userAgentData;
       try {
         const model = (await userAgentData?.getHighEntropyValues?.(["model"]))?.model?.trim();
         if (model) return `Android · ${model}`;
       } catch {
-        // Chromium may reject high-entropy hints; the regular UA remains a
-        // useful fallback on Android browsers and WebViews.
+        // Some browsers withhold high-entropy hints. The regular UA and stable
+        // suffix still provide a non-fabricated, distinguishable name.
       }
       const model = getAndroidModelFromUserAgent(ua);
       return model ? `Android · ${model}` : `Android · ${clientId.slice(-4).toUpperCase()}`;
     }
 
-    // Safari deliberately hides precise iPhone/iPad generations from web
-    // pages. The stable suffix still distinguishes two Apple devices without
-    // pretending the browser can identify an iPhone model it cannot see.
     const suffix = clientId.slice(-4).toUpperCase();
     if (/iPhone/.test(ua)) return `iPhone · ${suffix}`;
     if (/iPad/.test(ua)) return `iPad · ${suffix}`;
-    return `移动浏览器 · ${suffix}`;
+    return `Web · ${suffix}`;
   }
 
   function detectPlatform(): string {
@@ -121,43 +122,10 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
       window.localStorage.setItem(MOBILE_CLIENT_ID_KEY, generated);
       return generated;
     } catch {
-      // Private browser mode can disable storage. The active tab still keeps
-      // one session and the server will continue to require authorization.
-      return createClientId();
-    }
-  }
-
-  function readStoredSession(key: string): StoredMobileSession | null {
-    try {
-      const raw = window.sessionStorage.getItem(key);
-      if (!raw) return null;
-      const value = JSON.parse(raw) as Partial<StoredMobileSession>;
-      if (typeof value.sessionToken !== "string" || typeof value.deviceId !== "string") {
-        return null;
-      }
-      return {
-        sessionToken: value.sessionToken,
-        deviceId: value.deviceId,
-        approved: value.approved === true,
-      };
-    } catch {
-      return null;
-    }
-  }
-
-  function persistSession() {
-    if (!storageKey || !sessionToken.value || !deviceId.value) return;
-    try {
-      window.sessionStorage.setItem(
-        storageKey,
-        JSON.stringify({
-          sessionToken: sessionToken.value,
-          deviceId: deviceId.value,
-          approved: isApproved.value,
-        } satisfies StoredMobileSession)
-      );
-    } catch {
-      // The active in-memory session remains usable when storage is disabled.
+      // Private browsing may disable storage. Keep one identity for the tab so
+      // repeated registration calls still do not create duplicate devices.
+      transientClientId ??= createClientId();
+      return transientClientId;
     }
   }
 
@@ -168,12 +136,18 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
     }
   }
 
+  function clearIncomingRequest() {
+    pendingReceiveTransfer.value = null;
+    showReceiveDialog.value = false;
+    receiveError.value = null;
+  }
+
   async function refreshPendingReceiveTransfers() {
     const token = sessionToken.value;
     if (!token || !isApproved.value) return;
 
     try {
-      const response = await getPendingTransfersApi(token) as {
+      const response = (await getPendingTransfersApi(token)) as {
         transfers?: Array<{
           id: string;
           sourceDeviceName?: string;
@@ -187,7 +161,7 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
 
       pendingReceiveTransfer.value = {
         id: pending.id,
-        sourceDeviceName: pending.sourceDeviceName || "未知设备",
+        sourceDeviceName: pending.sourceDeviceName || translate("mobile.unknownDevice"),
         files: pending.files ?? [],
         totalBytes: pending.totalBytes ?? 0,
         expiresAt: pending.expiresAt,
@@ -200,52 +174,64 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
 
   function markDeviceApproved() {
     if (!sessionToken.value) return;
+    explicitRejection = false;
+    const changed = !isApproved.value;
     isApproved.value = true;
-    persistSession();
-    void refreshPendingReceiveTransfers();
+    connectionPhase.value = socketConnected ? "connected" : "connecting";
+    if (changed) void refreshPendingReceiveTransfers();
   }
 
   async function syncApprovalState(token = sessionToken.value): Promise<void> {
-    if (!token || !deviceId.value) return;
+    if (!token || !deviceId.value || approvalSyncInFlight) return;
+    approvalSyncInFlight = true;
+    const expectedDeviceId = deviceId.value;
     try {
       const state = await getCurrentDevice(token);
-      if (state.deviceId !== deviceId.value) return;
+      if (state.deviceId !== expectedDeviceId || expectedDeviceId !== deviceId.value) return;
 
-      isApproved.value = state.approved;
-      persistSession();
       if (state.approved) {
         markDeviceApproved();
+      } else {
+        const wasApproved = isApproved.value;
+        isApproved.value = false;
+        clearIncomingRequest();
+        if (wasApproved) {
+          connectionPhase.value = "revoked";
+        } else if (!explicitRejection) {
+          connectionPhase.value = "pending_approval";
+        }
       }
     } catch (error) {
-      // Do not discard a cached session for a transient network failure.
       console.warn("[mobile-session] Failed to refresh authorization state:", error);
+    } finally {
+      approvalSyncInFlight = false;
     }
   }
 
   function startApprovalPolling() {
     stopApprovalPolling();
     void syncApprovalState();
-    approvalPollTimer = window.setInterval(() => {
-      void syncApprovalState();
-    }, 2500);
+    approvalPollTimer = window.setInterval(() => void syncApprovalState(), 3000);
   }
 
   function handleTransferRequested(msg: { payload?: Record<string, unknown> }) {
     if (!isApproved.value) return;
-    const data = msg.payload as {
-      transferId?: string;
-      id?: string;
-      sourceDeviceName?: string;
-      files?: { id: string; name: string; size: number }[];
-      totalBytes?: number;
-      expiresAt?: string;
-    } | undefined;
+    const data = msg.payload as
+      | {
+          transferId?: string;
+          id?: string;
+          sourceDeviceName?: string;
+          files?: { id: string; name: string; size: number }[];
+          totalBytes?: number;
+          expiresAt?: string;
+        }
+      | undefined;
     const transferId = data?.transferId ?? data?.id;
     if (!data || !transferId || pendingReceiveTransfer.value?.id === transferId) return;
 
     pendingReceiveTransfer.value = {
       id: transferId,
-      sourceDeviceName: data.sourceDeviceName || "未知设备",
+      sourceDeviceName: data.sourceDeviceName || translate("mobile.unknownDevice"),
       files: data.files ?? [],
       totalBytes: data.totalBytes ?? 0,
       expiresAt: data.expiresAt,
@@ -254,48 +240,83 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
   }
 
   function handleDeviceApproved(msg: { payload?: Record<string, unknown> }) {
-    const approvedId = msg.payload?.deviceId;
-    if (approvedId === deviceId.value) markDeviceApproved();
+    if (msg.payload?.deviceId === deviceId.value) markDeviceApproved();
   }
 
   function handleDeviceRejected(msg: { payload?: Record<string, unknown> }) {
-    const rejectedId = msg.payload?.deviceId;
-    if (rejectedId !== deviceId.value) return;
-
+    if (msg.payload?.deviceId !== deviceId.value) return;
+    const wasApproved = isApproved.value;
+    explicitRejection = true;
     isApproved.value = false;
-    persistSession();
+    connectionPhase.value = wasApproved ? "revoked" : "rejected";
+    clearIncomingRequest();
+  }
+
+  function handleConnectionState(msg: { payload?: Record<string, unknown> }) {
+    const state = msg.payload?.state;
+    if (state === "open") {
+      socketConnected = true;
+      connectionPhase.value = isApproved.value ? "connected" : "pending_approval";
+      void syncApprovalState();
+      return;
+    }
+    if (state === "connecting") {
+      socketConnected = false;
+      if (isApproved.value) connectionPhase.value = "connecting";
+      return;
+    }
+    if (state === "reconnecting" || state === "disconnected") {
+      socketConnected = false;
+      if (isReady.value && !explicitRejection) connectionPhase.value = "reconnecting";
+    }
+  }
+
+  function handleReconnectFailed() {
+    socketConnected = false;
+    connectionPhase.value = "error";
+    connectionError.value = translate("mobile.realtimeReconnectFailed");
   }
 
   function bindSocketListeners() {
-    if (listenersBound) return;
-    listenersBound = true;
-    wsClient.on("transfer.requested", handleTransferRequested);
-    wsClient.on("device.approved", handleDeviceApproved);
-    wsClient.on("device.rejected", handleDeviceRejected);
+    if (!listenersBound) {
+      listenersBound = true;
+      wsClient.on("transfer.requested", handleTransferRequested);
+      wsClient.on("device.approved", handleDeviceApproved);
+      wsClient.on("device.rejected", handleDeviceRejected);
+      wsClient.on("connection.state", handleConnectionState);
+      wsClient.on("reconnect_failed", handleReconnectFailed);
+    }
+    if (!visibilityListenerBound) {
+      visibilityListenerBound = true;
+      document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState !== "visible" || !isReady.value) return;
+        void syncApprovalState();
+        if (wsClient.getState() === "disconnected") wsClient.reconnect();
+      });
+    }
   }
 
   function connectSocket(token: string) {
     bindSocketListeners();
-    if (socketToken === token) return;
     socketToken = token;
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     wsClient.connect(`${protocol}//${window.location.host}/ws?token=${encodeURIComponent(token)}`);
   }
 
   function setSession(token: string, id: string, approved: boolean) {
+    const tokenChanged = socketToken !== token;
     sessionToken.value = token;
     deviceId.value = id;
     isApproved.value = approved;
-    connectionError.value = null;
     isReady.value = true;
-    persistSession();
-    connectSocket(token);
-
-    startApprovalPolling();
-    if (approved) {
-      void refreshPendingReceiveTransfers();
-      void syncApprovalState(token);
+    explicitRejection = false;
+    connectionError.value = null;
+    connectionPhase.value = approved ? "connecting" : "pending_approval";
+    if (tokenChanged || wsClient.getState() === "idle" || wsClient.getState() === "disconnected") {
+      connectSocket(token);
     }
+    startApprovalPolling();
+    if (approved) void refreshPendingReceiveTransfers();
   }
 
   async function registerCurrentBrowser(token: string): Promise<RegistrationResponse> {
@@ -314,70 +335,68 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
     stopApprovalPolling();
     wsClient.disconnect();
     socketToken = "";
+    socketConnected = false;
+    explicitRejection = false;
     sessionToken.value = null;
     deviceId.value = null;
     isApproved.value = false;
     isReady.value = false;
-    pendingReceiveTransfer.value = null;
-    showReceiveDialog.value = false;
+    connectionError.value = null;
+    connectionPhase.value = "initializing";
+    clearIncomingRequest();
   }
 
   async function initialize(token: string | null | undefined) {
     const nextPairingToken = token?.trim() ?? "";
     if (!nextPairingToken) {
       reset();
-      connectionError.value = "连接链接无效，缺少授权参数。请重新扫描电脑上的二维码。";
+      connectionPhase.value = "error";
+      connectionError.value = translate("mobile.missingPairingToken");
       return;
     }
     if (nextPairingToken === pairingToken && isReady.value) {
       void syncApprovalState();
       return;
     }
-    if (initialization) return initialization;
 
-    initialization = (async () => {
-      reset();
-      pairingToken = nextPairingToken;
-      storageKey = `lynqo-mobile-session:${pairingToken}`;
-
-      const cached = readStoredSession(storageKey);
-      if (cached) {
-        setSession(cached.sessionToken, cached.deviceId, cached.approved);
-        // Refresh the persisted name after an app upgrade. Stable client IDs
-        // ensure this updates the existing phone instead of adding a duplicate.
-        void registerCurrentBrowser(pairingToken)
-          .then((registration) => {
-            if (registration.sessionToken && registration.deviceId === cached.deviceId) {
-              setSession(
-                registration.sessionToken,
-                registration.deviceId,
-                registration.approved === true
-              );
-            }
-          })
-          .catch((error) => console.warn("[mobile-session] Failed to refresh device identity:", error));
-        return;
-      }
-
-      try {
-        await validateToken(pairingToken);
-        const registration = await registerCurrentBrowser(pairingToken);
-
-        if (!registration.sessionToken || !registration.deviceId) {
-          throw new Error("服务器未返回有效的设备会话。");
-        }
-        setSession(registration.sessionToken, registration.deviceId, registration.approved === true);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "连接验证失败。";
-        connectionError.value = `${message} 请重新扫描电脑上的二维码。`;
-        console.error("[mobile-session] Token validation failed:", error);
-      }
-    })();
-
+    const requestVersion = ++initializationVersion;
+    reset();
+    pairingToken = nextPairingToken;
+    connectionPhase.value = "initializing";
     try {
-      await initialization;
-    } finally {
-      initialization = null;
+      await validateToken(nextPairingToken);
+      const registration = await registerCurrentBrowser(nextPairingToken);
+      if (requestVersion !== initializationVersion) return;
+      if (!registration.sessionToken || !registration.deviceId) {
+        throw new Error(translate("mobile.invalidDeviceSession"));
+      }
+      // Always accept the authoritative registration response. This recovers
+      // automatically when the desktop database was cleared and issued a new
+      // device ID instead of remaining stuck on a stale cached session.
+      setSession(registration.sessionToken, registration.deviceId, registration.approved === true);
+    } catch (error) {
+      if (requestVersion !== initializationVersion) return;
+      const message = error instanceof Error ? error.message : translate("mobile.validationFailed");
+      connectionPhase.value = "error";
+      connectionError.value = `${message} ${translate("mobile.scanAgain")}`;
+      console.error("[mobile-session] Token validation failed:", error);
+    }
+  }
+
+  async function requestAccess() {
+    if (!pairingToken) return;
+    explicitRejection = false;
+    connectionError.value = null;
+    connectionPhase.value = "initializing";
+    try {
+      const registration = await registerCurrentBrowser(pairingToken);
+      if (!registration.sessionToken || !registration.deviceId) {
+        throw new Error(translate("mobile.invalidDeviceSession"));
+      }
+      setSession(registration.sessionToken, registration.deviceId, registration.approved === true);
+    } catch (error) {
+      connectionPhase.value = "error";
+      connectionError.value = error instanceof Error ? error.message : translate("mobile.requestAccessFailed");
     }
   }
 
@@ -388,7 +407,7 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
 
     receiveError.value = null;
     try {
-      const accepted = await acceptTransfer(transferId, token) as {
+      const accepted = (await acceptTransfer(transferId, token)) as {
         downloadTokens?: Array<{ fileId: string; downloadToken: string }>;
       };
       const tokenByFile = new Map(
@@ -398,7 +417,7 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
       for (const file of transfer.files) {
         const downloadToken = tokenByFile.get(file.id);
         if (!downloadToken) {
-          throw new Error(`服务器未为 ${file.name} 创建下载凭证。`);
+          throw new Error(translate("mobile.noDownloadCredential", { name: file.name }));
         }
         const link = document.createElement("a");
         link.href = getDownloadUrl(transferId, file.id, downloadToken, deviceId.value);
@@ -408,11 +427,10 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
         document.body.removeChild(link);
       }
 
-      pendingReceiveTransfer.value = null;
-      showReceiveDialog.value = false;
+      clearIncomingRequest();
       void refreshPendingReceiveTransfers();
     } catch (error) {
-      receiveError.value = error instanceof Error ? error.message : "接收传输失败。";
+      receiveError.value = error instanceof Error ? error.message : translate("mobile.receiveFailed");
       console.error("[mobile-session] Failed to accept transfer:", error);
     }
   }
@@ -424,11 +442,10 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
     receiveError.value = null;
     try {
       await rejectTransfer(transferId, token);
-      pendingReceiveTransfer.value = null;
-      showReceiveDialog.value = false;
+      clearIncomingRequest();
       void refreshPendingReceiveTransfers();
     } catch (error) {
-      receiveError.value = error instanceof Error ? error.message : "拒绝传输失败。";
+      receiveError.value = error instanceof Error ? error.message : translate("mobile.rejectTransferFailed");
       console.error("[mobile-session] Failed to reject transfer:", error);
     }
   }
@@ -438,11 +455,13 @@ export const useMobileSessionStore = defineStore("mobileSession", () => {
     deviceId,
     isApproved,
     isReady,
+    connectionPhase,
     connectionError,
     receiveError,
     pendingReceiveTransfer,
     showReceiveDialog,
     initialize,
+    requestAccess,
     syncApprovalState,
     refreshPendingReceiveTransfers,
     acceptIncomingTransfer,

@@ -115,10 +115,6 @@ function getPlatformLabel(platform: string): string {
             <span class="meta-value">{{ device.ip }}</span>
           </div>
           <div class="meta-row">
-            <span class="meta-label">{{ t("devices.latency") }}</span>
-            <span class="meta-value">{{ device.latencyMs != null ? `${device.latencyMs}ms` : "—" }}</span>
-          </div>
-          <div class="meta-row">
             <span class="meta-label">{{ t("devices.status") }}</span>
             <span class="meta-value" :class="device.online ? 'meta-value--online' : 'meta-value--offline'">
               {{ device.online ? t("home.online") : t("home.offline") }}

@@ -5,10 +5,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 export interface ServiceInfo {
   status: string;
   port: number;
-  localIp?: string;
-  localUrl?: string;
-  startedAt?: string;
-  error?: string;
+  localIp: string | null;
+  localUrl: string | null;
+  startedAt: string | null;
+  error: string | null;
 }
 
 export interface ConnectionInfo {
@@ -21,6 +21,45 @@ export interface ConnectionInfo {
   networkName: string;
   receiveFolder: string;
   deviceName: string;
+  addresses: ConnectionAddress[];
+}
+
+export interface ConnectionAddress {
+  ip: string;
+  interfaceName: string;
+  kind: "lan" | "hotspot" | "virtual";
+  url: string;
+  selected: boolean;
+}
+
+export interface LanInterface {
+  name: string;
+  ip: string;
+  isPrivate: boolean;
+  isVirtual: boolean;
+  kind: "lan" | "hotspot" | "virtual";
+  hasDefaultGateway: boolean;
+  isDefaultRoute: boolean;
+  selected: boolean;
+}
+
+export interface ConnectionDiagnostics {
+  serviceStatus: string;
+  configuredPort: number;
+  listeningPort: number;
+  bindAddress: string;
+  localIp: string | null;
+  localUrl: string | null;
+  qrUrl: string | null;
+  ipIsPrivate: boolean | null;
+  loopbackReachable: boolean | null;
+  lanAddressReachable: boolean | null;
+  mdnsAdvertised: boolean;
+  firewallStatus: "allowed" | "disabled" | "missing" | "unknown" | "unsupported";
+  connectedDeviceCount: number;
+  interfaces: LanInterface[];
+  warnings: string[];
+  checkedAt: string;
 }
 
 export interface QrCodeData {
@@ -52,7 +91,7 @@ export interface SendTransferResult {
 
 // Check if running in Tauri (not plain browser)
 export function isTauri(): boolean {
-  return "__TAURI_INTERNALS__" in window;
+  return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
 // All commands wrapped with error handling
@@ -80,8 +119,16 @@ export async function getConnectionInfo(): Promise<ConnectionInfo> {
   return invoke("get_connection_info");
 }
 
-export async function getConnectionQrCode(): Promise<QrCodeData> {
-  return invoke("get_connection_qr_code");
+export async function getConnectionDiagnostics(ip?: string): Promise<ConnectionDiagnostics> {
+  return invoke("get_connection_diagnostics", { ip: ip ?? null });
+}
+
+export async function configureWindowsFirewall(): Promise<CommandResult> {
+  return invoke("configure_windows_firewall");
+}
+
+export async function getConnectionQrCode(ip?: string): Promise<QrCodeData> {
+  return invoke("get_connection_qr_code", { ip: ip ?? null });
 }
 
 export async function getAppVersion(): Promise<AppVersionInfo> {

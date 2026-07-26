@@ -54,6 +54,19 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state.clone())
         .setup(move |app| {
+            // Network adapters can change while the app is hidden in the tray.
+            // Keep the backend endpoint and mDNS record current even when no
+            // connection panel is open to trigger an IPC refresh.
+            let monitor_state = state.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(3));
+                interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    interval.tick().await;
+                    commands::server_cmd::synchronize_network_state(&monitor_state).await;
+                }
+            });
+
             // Build tray menu
             let show_item = MenuItem::with_id(app, "show", "打开 LYNQO", true, None::<&str>)?;
             let start_item =
@@ -158,7 +171,9 @@ pub fn run() {
             commands::server_cmd::refresh_local_ip,
             commands::server_cmd::regenerate_connection_token,
             commands::server_cmd::get_connection_info,
+            commands::server_cmd::get_connection_diagnostics,
             commands::server_cmd::get_connection_qr_code,
+            commands::server_cmd::configure_windows_firewall,
             commands::server_cmd::get_devices,
             commands::server_cmd::approve_device,
             commands::server_cmd::reject_device,

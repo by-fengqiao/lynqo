@@ -3,6 +3,13 @@ export interface WsMessage {
   payload?: Record<string, unknown>;
 }
 
+export type WsConnectionState =
+  | "idle"
+  | "connecting"
+  | "open"
+  | "reconnecting"
+  | "disconnected";
+
 type Listener = (msg: WsMessage) => void;
 
 export class LynqoWebSocket {
@@ -10,85 +17,138 @@ export class LynqoWebSocket {
   private listeners = new Map<string, Set<Listener>>();
   private url = "";
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 10;
+  private readonly maxReconnectAttempts = 10;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private intentionalClose = false;
+  private state: WsConnectionState = "idle";
 
   connect(url: string) {
+    const urlChanged = url !== this.url;
+    if (
+      !urlChanged &&
+      (this.ws?.readyState === WebSocket.OPEN ||
+        this.ws?.readyState === WebSocket.CONNECTING)
+    ) {
+      return;
+    }
+
+    if (urlChanged) {
+      this.closeCurrentSocket();
+      this.reconnectAttempts = 0;
+    }
     this.url = url;
     this.intentionalClose = false;
+    this.transition("connecting");
     this.doConnect();
   }
 
+  private transition(state: WsConnectionState, payload: Record<string, unknown> = {}) {
+    this.state = state;
+    this.emit("connection.state", {
+      type: "connection.state",
+      payload: { state, ...payload },
+    });
+  }
+
   private doConnect() {
-    if (this.ws?.readyState === WebSocket.OPEN) return;
-    this.ws = new WebSocket(this.url);
-    this.ws.onopen = () => {
+    if (!this.url || this.intentionalClose) return;
+    if (
+      this.ws?.readyState === WebSocket.OPEN ||
+      this.ws?.readyState === WebSocket.CONNECTING
+    ) {
+      return;
+    }
+
+    const socket = new WebSocket(this.url);
+    this.ws = socket;
+    socket.onopen = () => {
+      if (socket !== this.ws) return;
       this.reconnectAttempts = 0;
+      this.transition("open");
       this.emit("connected", { type: "connected", payload: {} });
     };
-    this.ws.onmessage = (event) => {
+    socket.onmessage = (event) => {
+      if (socket !== this.ws) return;
       try {
-        const msg = JSON.parse(event.data as string);
+        const msg = JSON.parse(event.data as string) as WsMessage;
         this.emit(msg.type, msg);
       } catch {
-        // Ignore malformed messages
+        // Ignore malformed messages from an incompatible endpoint.
       }
     };
-    this.ws.onclose = () => {
-      if (!this.intentionalClose) this.scheduleReconnect();
+    socket.onclose = (event) => {
+      if (socket !== this.ws) return;
+      this.ws = null;
+      if (this.intentionalClose) {
+        this.transition("idle");
+        return;
+      }
+      this.emit("disconnected", {
+        type: "disconnected",
+        payload: { reason: "socket_closed", code: event.code },
+      });
+      this.scheduleReconnect();
     };
-    this.ws.onerror = () => {
-      this.ws?.close();
+    socket.onerror = () => {
+      if (socket === this.ws) socket.close();
     };
   }
 
   private scheduleReconnect() {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      // Give up loudly so the UI can surface the failure (BUG #11)
-      this.emit("disconnected", {
-        type: "disconnected",
-        payload: { reason: "reconnect_exhausted" },
-      });
+      this.transition("disconnected", { reason: "reconnect_exhausted" });
       this.emit("reconnect_failed", {
         type: "reconnect_failed",
         payload: { attempts: this.maxReconnectAttempts },
       });
       return;
     }
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
-    this.reconnectAttempts++;
-    this.reconnectTimer = setTimeout(() => this.doConnect(), delay);
-  }
 
-  disconnect() {
-    this.intentionalClose = true;
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30000);
+    this.reconnectAttempts += 1;
+    this.transition("reconnecting", {
+      attempt: this.reconnectAttempts,
+      delay,
+    });
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
-    this.ws?.close();
-    this.ws = null;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.doConnect();
+    }, delay);
   }
 
-  /**
-   * Manual reconnect (e.g. after reconnect attempts were exhausted).
-   * Resets the attempt counter and opens a fresh connection.
-   */
-  reconnect() {
+  private closeCurrentSocket() {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    const socket = this.ws;
+    this.ws = null;
+    if (!socket) return;
+    socket.onopen = null;
+    socket.onmessage = null;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.close();
+  }
+
+  disconnect() {
+    this.intentionalClose = true;
+    this.closeCurrentSocket();
+    this.transition("idle");
+  }
+
+  reconnect() {
+    this.closeCurrentSocket();
     this.reconnectAttempts = 0;
     this.intentionalClose = false;
-    if (this.ws) {
-      // Detach handlers so the stale onclose cannot trigger a ghost reconnect
-      this.ws.onopen = null;
-      this.ws.onmessage = null;
-      this.ws.onclose = null;
-      this.ws.onerror = null;
-      this.ws.close();
-      this.ws = null;
-    }
-    if (this.url) this.doConnect();
+    if (!this.url) return;
+    this.transition("connecting");
+    this.doConnect();
+  }
+
+  getState(): WsConnectionState {
+    return this.state;
   }
 
   on(type: string, fn: Listener) {

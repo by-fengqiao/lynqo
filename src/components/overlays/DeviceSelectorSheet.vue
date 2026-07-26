@@ -44,8 +44,7 @@ function getDeviceMeta(device: Device): string {
   };
   const platform = platformMap[device.platform] || device.platform;
   const status = device.online ? "在线" : "离线";
-  const latency = device.latencyMs != null ? ` · ${device.latencyMs}ms` : "";
-  return `${platform} · ${status}${latency}`;
+  return `${platform} · ${status}`;
 }
 
 function handleSelect(device: Device) {
