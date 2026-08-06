@@ -5,6 +5,8 @@ use crate::server::{self, ServiceStatus, SharedState};
 
 #[cfg(target_os = "windows")]
 const WINDOWS_FIREWALL_RULE_NAME: &str = "LanNook LAN File Transfer";
+
+#[cfg(target_os = "windows")]
 const LEGACY_WINDOWS_FIREWALL_RULE_NAME: &str = "LYNQO LAN File Transfer";
 
 #[derive(Debug, Clone, Serialize)]
