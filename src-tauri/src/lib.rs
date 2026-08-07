@@ -5,7 +5,8 @@ pub mod server;
 pub mod storage;
 pub mod transfer;
 
-use server::SharedState;
+use server::{SharedState, WsEvent};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use storage::Database;
@@ -151,6 +152,15 @@ pub fn run() {
                 })
                 .build(app)?;
 
+            // Desktop notifications + tray task counter. Subscribing to the
+            // same event bus as the WebSocket fan-out keeps system
+            // notifications and the tray label in sync with live transfers.
+            let notification_state = state.clone();
+            let notification_app = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                monitor_transfer_events(notification_state, notification_app).await;
+            });
+
             // Handle close-to-tray: intercept window close request
             let window = app.get_webview_window("main").unwrap();
             let window_handle = window.clone();
@@ -191,6 +201,7 @@ pub fn run() {
             commands::server_cmd::forget_device,
             commands::server_cmd::get_transfers,
             commands::server_cmd::cancel_transfer,
+            commands::server_cmd::delete_transfers,
             commands::server_cmd::get_settings,
             commands::server_cmd::update_settings,
             commands::server_cmd::open_receive_folder,
@@ -278,6 +289,112 @@ fn migrate_legacy_app_data_at(base: &Path) {
     }
     move_legacy_entry(&legacy, &current, "config.json", "config.json");
     move_legacy_entry(&legacy, &current, "logs", "logs");
+}
+
+/// Human-readable file summary for one transfer, e.g. "photo.jpg" or
+/// "photo.jpg 等 3 个文件".
+async fn transfer_file_label(state: &SharedState, transfer_id: &str) -> String {
+    let s = state.lock().await;
+    let Ok(files) = s.db.get_transfer_files(transfer_id) else {
+        return transfer_id.to_string();
+    };
+    let Some(first) = files.first() else {
+        return transfer_id.to_string();
+    };
+    if files.len() > 1 {
+        format!("{} 等 {} 个文件", first.name, files.len())
+    } else {
+        first.name.clone()
+    }
+}
+
+fn update_tray_label(app: &tauri::AppHandle, active_count: usize) {
+    let label = if active_count > 0 {
+        format!("LanNook — 正在传输 {active_count} 个任务")
+    } else {
+        "LanNook — 连接附近，自由传输".to_string()
+    };
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(&label));
+    }
+}
+
+fn send_desktop_notification(app: &tauri::AppHandle, title: &str, body: &str) {
+    use tauri_plugin_notification::NotificationExt;
+    if let Err(error) = app.notification().builder().title(title).body(body).show() {
+        tracing::warn!("Failed to show desktop notification: {}", error);
+    }
+}
+
+/// Subscribe to the transfer event bus and drive two desktop integrations:
+///
+/// * the tray tooltip shows the number of active transfers;
+/// * system notifications fire on transfer start, completion and failure.
+///
+/// Notifications are emitted once per lifecycle transition because the event
+/// bus already coalesces duplicate state changes.
+async fn monitor_transfer_events(state: SharedState, app: tauri::AppHandle) {
+    let mut active: HashMap<String, ()> = HashMap::new();
+
+    // Seed the counter with transfers that are still active when the desktop
+    // UI (re)starts, so the tray label survives an app relaunch.
+    if let Ok(transfers) = state.lock().await.db.list_transfers() {
+        for transfer in transfers {
+            if matches!(
+                transfer.status.as_str(),
+                "transferring" | "waiting" | "accepted" | "requesting" | "awaiting_acceptance"
+            ) {
+                active.insert(transfer.id, ());
+            }
+        }
+    }
+    update_tray_label(&app, active.len());
+
+    let mut rx = state.lock().await.event_tx.subscribe();
+    loop {
+        let event = match rx.recv().await {
+            Ok(event) => event,
+            Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+            Err(_) => break,
+        };
+
+        match &event {
+            WsEvent::TransferStarted { transfer_id }
+            | WsEvent::TransferResumed { transfer_id }
+            | WsEvent::TransferDownloadStarted { transfer_id } => {
+                active.insert(transfer_id.clone(), ());
+                update_tray_label(&app, active.len());
+            }
+            WsEvent::TransferPaused { transfer_id }
+            | WsEvent::TransferCompleted { transfer_id, .. }
+            | WsEvent::TransferFailed { transfer_id, .. }
+            | WsEvent::TransferCancelled { transfer_id }
+            | WsEvent::TransferRejected { transfer_id }
+            | WsEvent::TransferExpired { transfer_id }
+            | WsEvent::TransferDeleted { transfer_id } => {
+                active.remove(transfer_id);
+                update_tray_label(&app, active.len());
+            }
+            _ => {}
+        }
+
+        match &event {
+            WsEvent::TransferStarted { transfer_id }
+            | WsEvent::TransferDownloadStarted { transfer_id } => {
+                let label = transfer_file_label(&state, transfer_id).await;
+                send_desktop_notification(&app, "传输开始", &label);
+            }
+            WsEvent::TransferCompleted { transfer_id, .. } => {
+                let label = transfer_file_label(&state, transfer_id).await;
+                send_desktop_notification(&app, "传输完成", &label);
+            }
+            WsEvent::TransferFailed { transfer_id, error } => {
+                let label = transfer_file_label(&state, transfer_id).await;
+                send_desktop_notification(&app, "传输失败", &format!("{label} — {error}"));
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Returns the product data directory and migrates data from the legacy

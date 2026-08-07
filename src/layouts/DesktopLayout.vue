@@ -71,11 +71,11 @@ function handleConnectDevice() {
   emit("connect-device");
 }
 
-async function allowDeviceAccess(deviceId: string, trusted: boolean) {
+async function allowDeviceAccess(deviceId: string, trusted: boolean, expiryHours?: number) {
   const deviceName = devicesStore.devices.find((device) => device.id === deviceId)?.name ?? t("device.thisDevice");
   accessDecisionPending.value = true;
   try {
-    const succeeded = await devicesStore.approveDevice(deviceId, trusted);
+    const succeeded = await devicesStore.approveDevice(deviceId, trusted, expiryHours);
     if (succeeded) {
       appStore.pushToast(
         "success",

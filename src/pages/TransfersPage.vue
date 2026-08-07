@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, shallowRef } from "vue";
+import { computed, onMounted, onUnmounted, ref, shallowRef } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
   FolderOpen,
@@ -14,6 +14,9 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   RefreshCw,
+  Search,
+  Trash2,
+  RotateCcw,
 } from "lucide-vue-next";
 import { useTransfersStore } from "@/stores/transfers";
 import { useDevicesStore } from "@/stores/devices";
@@ -34,6 +37,9 @@ const { t } = useLocale();
 
 const expandedId = shallowRef<string | null>(null);
 const now = shallowRef(Date.now());
+const searchQuery = ref("");
+const showSelection = ref(false);
+const selectedIds = ref<string[]>([]);
 let elapsedTimer: ReturnType<typeof window.setInterval> | null = null;
 
 const attentionStatuses = new Set(["paused", "failed", "awaiting_acceptance"]);
@@ -47,17 +53,30 @@ function parseFilter(value: unknown): TransferCenterFilter {
 
 const selectedFilter = computed(() => parseFilter(route.query.filter));
 
+function matchesSearch(task: TransferTask): boolean {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return true;
+  return (
+    task.files.some((file) => file.name.toLowerCase().includes(query)) ||
+    getDeviceName(task.sourceDeviceId).toLowerCase().includes(query) ||
+    getDeviceName(task.targetDeviceId).toLowerCase().includes(query)
+  );
+}
+
 const filteredTransfers = computed(() => {
-  switch (selectedFilter.value) {
-    case "active":
-      return transfersStore.activeTransfers;
-    case "completed":
-      return transfersStore.completedTransfers;
-    case "attention":
-      return transfersStore.transfers.filter((task) => attentionStatuses.has(task.status));
-    default:
-      return transfersStore.transfers;
-  }
+  const base = (() => {
+    switch (selectedFilter.value) {
+      case "active":
+        return transfersStore.activeTransfers;
+      case "completed":
+        return transfersStore.completedTransfers;
+      case "attention":
+        return transfersStore.transfers.filter((task) => attentionStatuses.has(task.status));
+      default:
+        return transfersStore.transfers;
+    }
+  })();
+  return base.filter(matchesSearch);
 });
 
 const filterCounts = computed<Record<TransferCenterFilter, number>>(() => ({
@@ -250,6 +269,49 @@ function handleRetry(id: string) {
   transfersStore.retryTransfer(id);
 }
 
+function toggleSelect(id: string) {
+  if (selectedIds.value.includes(id)) {
+    selectedIds.value = selectedIds.value.filter((selected) => selected !== id);
+  } else {
+    selectedIds.value.push(id);
+  }
+}
+
+const allSelected = computed(() => {
+  const visible = filteredTransfers.value;
+  return visible.length > 0 && visible.every((task) => selectedIds.value.includes(task.id));
+});
+
+function toggleSelectAll() {
+  if (allSelected.value) {
+    const visibleIds = new Set(filteredTransfers.value.map((task) => task.id));
+    selectedIds.value = selectedIds.value.filter((id) => !visibleIds.has(id));
+  } else {
+    for (const task of filteredTransfers.value) {
+      if (!selectedIds.value.includes(task.id)) selectedIds.value.push(task.id);
+    }
+  }
+}
+
+function exitSelection() {
+  showSelection.value = false;
+  selectedIds.value = [];
+}
+
+function batchRetry() {
+  for (const id of selectedIds.value) {
+    const task = transfersStore.transfers.find((t) => t.id === id);
+    if (task?.status === "failed") transfersStore.retryTransfer(id);
+  }
+  exitSelection();
+}
+
+async function batchDelete() {
+  const ids = [...selectedIds.value];
+  exitSelection();
+  await transfersStore.removeTransfers(ids);
+}
+
 onMounted(() => {
   elapsedTimer = window.setInterval(() => {
     now.value = Date.now();
@@ -288,9 +350,60 @@ onUnmounted(() => {
       @update:model-value="selectFilter"
     />
 
+    <!-- Search & Batch Actions -->
+    <div class="toolbar">
+      <div class="search-box">
+        <Search :size="14" />
+        <input
+          v-model="searchQuery"
+          type="text"
+          :placeholder="t('transfers.searchPlaceholder')"
+        />
+      </div>
+      <div class="toolbar-actions">
+        <button
+          v-if="!showSelection"
+          class="outline-btn outline-btn--small"
+          @click="showSelection = true"
+        >
+          {{ t("transfers.select") }}
+        </button>
+        <template v-else>
+          <button
+            class="outline-btn outline-btn--small"
+            :disabled="selectedIds.length === 0"
+            @click="batchRetry"
+          >
+            <RotateCcw :size="14" />
+            {{ t("transfers.batchRetry") }}
+          </button>
+          <button
+            class="outline-btn outline-btn--small outline-btn--danger"
+            :disabled="selectedIds.length === 0"
+            @click="batchDelete"
+          >
+            <Trash2 :size="14" />
+            {{ t("transfers.batchDelete") }}
+          </button>
+          <button class="outline-btn outline-btn--small" @click="exitSelection">
+            {{ t("transfers.cancelSelect") }}
+          </button>
+          <span class="selection-count">{{ selectedIds.length }}</span>
+        </template>
+      </div>
+    </div>
+
     <!-- Transfer Table Card -->
     <div class="table-card">
       <div class="table-header">
+        <span class="col-checkbox">
+          <input
+            v-if="showSelection"
+            type="checkbox"
+            :checked="allSelected"
+            @change="toggleSelectAll"
+          />
+        </span>
         <span class="col-icon"></span>
         <span>{{ t("transfers.file") }}</span>
         <span>{{ t("transfers.source") }}</span>
@@ -313,6 +426,14 @@ onUnmounted(() => {
               class="transfer-row"
               :class="{ 'transfer-row--expanded': expandedId === task.id }"
             >
+            <span class="col-checkbox">
+              <input
+                v-if="showSelection"
+                type="checkbox"
+                :checked="selectedIds.includes(task.id)"
+                @change="toggleSelect(task.id)"
+              />
+            </span>
             <button class="expand-btn" @click="toggleExpand(task.id)">
               <ChevronDown v-if="expandedId === task.id" :size="14" />
               <ChevronRight v-else :size="14" />
@@ -340,10 +461,15 @@ onUnmounted(() => {
               <div class="progress-bar">
                 <div
                   class="progress-fill"
-                  :style="{ width: `${Math.round(task.progress * 100)}%` }"
+                  :style="{ width: `${Math.round((task.status === 'verifying' ? task.checksumProgress ?? 0 : task.progress) * 100)}%` }"
                 ></div>
               </div>
-              <span class="progress-text">{{ Math.round(task.progress * 100) }}%</span>
+              <span class="progress-text">
+                <template v-if="task.status === 'verifying'">
+                  {{ Math.round((task.checksumProgress ?? 0) * 100) }}%
+                </template>
+                <template v-else>{{ Math.round(task.progress * 100) }}%</template>
+              </span>
             </span>
             <span class="col-speed">
               <span>{{ formatSpeed(task.speedBytesPerSecond) }}</span>
@@ -424,6 +550,9 @@ onUnmounted(() => {
                   </summary>
                   <code class="checksum-full">{{ getChecksum(task) }}</code>
                 </details>
+                <span v-else-if="task.status === 'verifying'" class="detail-value detail-value--mono">
+                  {{ t("transfers.verifyingProgress", { percent: Math.round((task.checksumProgress ?? 0) * 100) }) }}
+                </span>
                 <span v-else class="detail-value detail-value--mono">{{ getChecksumLabel(task) }}</span>
               </div>
               <div class="detail-item">
@@ -487,6 +616,84 @@ onUnmounted(() => {
   background: var(--color-selected);
 }
 
+.outline-btn--small {
+  padding: 6px 10px;
+  font-size: var(--text-xs);
+}
+
+.outline-btn--danger {
+  border-color: var(--color-state-error);
+  color: var(--color-state-error);
+}
+
+.outline-btn--danger:hover {
+  background: var(--color-state-error-soft);
+}
+
+.outline-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+}
+
+/* Toolbar */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  max-width: 360px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-card);
+  color: var(--color-text-tertiary);
+  transition: border-color var(--transition-fast);
+}
+
+.search-box:focus-within {
+  border-color: var(--color-brand-primary);
+}
+
+.search-box input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--text-sm);
+}
+
+.search-box input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.selection-count {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-brand);
+  background: var(--color-selected);
+  border-radius: var(--radius-full);
+  padding: 2px 10px;
+  min-width: 28px;
+  text-align: center;
+}
+
 /* Table Card */
 .table-card {
   background: var(--color-surface-card);
@@ -505,7 +712,7 @@ onUnmounted(() => {
 
 .table-header {
   display: grid;
-  grid-template-columns: 28px 1.2fr 100px 100px 72px 100px 80px 68px 72px 56px;
+  grid-template-columns: 20px 28px 1.2fr 100px 100px 72px 100px 80px 68px 72px 56px;
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
@@ -522,13 +729,26 @@ onUnmounted(() => {
 
 .transfer-row {
   display: grid;
-  grid-template-columns: 28px 1.2fr 100px 100px 72px 100px 80px 68px 72px 56px;
+  grid-template-columns: 20px 28px 1.2fr 100px 100px 72px 100px 80px 68px 72px 56px;
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--color-border);
   font-size: var(--text-sm);
   transition: background var(--transition-fast);
+}
+
+.col-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.col-checkbox input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--color-brand-primary);
+  cursor: pointer;
 }
 
 .transfer-row:hover {

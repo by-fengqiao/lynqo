@@ -96,6 +96,17 @@ async fn validate_session(state: &SharedState, token: &str) -> AppResult<DeviceR
     let device =
         s.db.get_device_by_session_token(token)?
             .ok_or(AppError::InvalidToken)?;
+
+    // Authorization expiry: once the deadline passes, the approval is revoked
+    // here and now so a stale browser can never continue transferring.
+    if s.db.revoke_device_if_expired(&device)? {
+        let _ = s.event_tx.send(WsEvent::DeviceRejected {
+            device_id: device.id.clone(),
+        });
+        tracing::info!("Device approval expired: {}", device.id);
+        return Err(AppError::DeviceNotApproved);
+    }
+
     // Refresh the activity timestamp, keeping the stored IP (ISSUE 8). This is
     // best-effort: a failure here must not reject an otherwise valid session.
     let _ = s.db.update_device_last_seen(&device.id, &device.ip);
@@ -200,15 +211,26 @@ fn mobile_target_list(
     targets
 }
 
-/// Simple speed tracker using a moving window
+/// Speed tracker using a moving window plus an exponential moving average.
+///
+/// The 3-second window bounds memory and reacts to stalls, while the EMA
+/// removes the jitter between individual chunk uploads so the displayed
+/// speed no longer "flashes" between wildly different values. The remaining
+/// time is derived from the same smoothed value, keeping phone and desktop
+/// telemetry consistent.
 struct SpeedTracker {
     samples: Vec<(Instant, i64)>,
+    smoothed_speed: f64,
 }
 
 impl SpeedTracker {
+    /// EMA weight applied to each new instantaneous reading.
+    const EMA_ALPHA: f64 = 0.35;
+
     fn new() -> Self {
         Self {
             samples: Vec::new(),
+            smoothed_speed: 0.0,
         }
     }
 
@@ -218,20 +240,41 @@ impl SpeedTracker {
         // Keep only last 3 seconds of samples
         self.samples
             .retain(|(t, _)| now.duration_since(*t).as_secs() < 3);
+        // Fold this reading into the EMA immediately so every call site
+        // observes the same smoothed value.
+        self.update_smoothed();
     }
 
-    fn speed_bytes_per_second(&self) -> i64 {
+    fn update_smoothed(&mut self) {
+        let raw = self.raw_speed_bytes_per_second();
+        if raw > 0.0 {
+            self.smoothed_speed = if self.smoothed_speed <= 0.0 {
+                raw
+            } else {
+                Self::EMA_ALPHA * raw + (1.0 - Self::EMA_ALPHA) * self.smoothed_speed
+            };
+        } else if self.samples.len() < 2 && self.smoothed_speed > 0.0 {
+            // The window drained without a new chunk: the transfer stalled.
+            self.smoothed_speed = 0.0;
+        }
+    }
+
+    fn raw_speed_bytes_per_second(&self) -> f64 {
         if self.samples.len() < 2 {
-            return 0;
+            return 0.0;
         }
         let first = &self.samples[0];
         let last = &self.samples[self.samples.len() - 1];
         let elapsed = last.0.duration_since(first.0).as_secs_f64();
         if elapsed < 0.01 {
-            return 0;
+            return 0.0;
         }
         let bytes_transferred = last.1 - first.1;
-        (bytes_transferred as f64 / elapsed) as i64
+        bytes_transferred as f64 / elapsed
+    }
+
+    fn speed_bytes_per_second(&self) -> i64 {
+        self.smoothed_speed as i64
     }
 }
 
@@ -479,6 +522,7 @@ pub async fn register_device(
         ip: peer_ip.clone(),
         created_at: now.clone(),
         last_seen: now,
+        approved_until: None,
     };
 
     let (device, created) = {
@@ -1126,10 +1170,23 @@ pub async fn complete_transfer(
             return Err(AppError::Internal(error));
         }
 
-        // Compute SHA-256
-        let sha256 = transfer::compute_sha256(&temp_path)
-            .await
-            .map_err(AppError::Io)?;
+        // Compute SHA-256 with live progress so the transfer center shows a
+        // real verification bar instead of an indefinite "verifying" state.
+        let progress_tx = {
+            let s = state.lock().await;
+            s.event_tx.clone()
+        };
+        let progress_transfer_id = transfer_id.clone();
+        let progress_file_id = file_record.id.clone();
+        let sha256 = transfer::compute_sha256_with_progress(&temp_path, |progress| {
+            let _ = progress_tx.send(WsEvent::TransferChecksumProgress {
+                transfer_id: progress_transfer_id.clone(),
+                file_id: progress_file_id.clone(),
+                progress,
+            });
+        })
+        .await
+        .map_err(AppError::Io)?;
 
         if is_relay {
             // Relay: keep the file in the relay temp directory so the target
@@ -1908,6 +1965,9 @@ pub async fn download_file(
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(500));
             let start = Instant::now();
+            // EMA smoothing mirrors SpeedTracker so download telemetry does
+            // not jitter between 500ms readings.
+            let mut smoothed_speed: f64 = 0.0;
 
             loop {
                 interval.tick().await;
@@ -1934,11 +1994,22 @@ pub async fn download_file(
                 }
 
                 let elapsed = start.elapsed().as_secs_f64();
-                let speed = if elapsed > 0.1 {
-                    (sent as f64 / elapsed) as i64
+                let raw_speed = if elapsed > 0.1 {
+                    sent as f64 / elapsed
                 } else {
-                    0
+                    0.0
                 };
+                let speed_f64 = if raw_speed > 0.0 {
+                    if smoothed_speed <= 0.0 {
+                        raw_speed
+                    } else {
+                        0.35 * raw_speed + 0.65 * smoothed_speed
+                    }
+                } else {
+                    smoothed_speed
+                };
+                smoothed_speed = speed_f64;
+                let speed = speed_f64 as i64;
                 let progress = if total > 0 {
                     (sent as f64 / total as f64) * 100.0
                 } else {
@@ -2124,9 +2195,11 @@ pub async fn resume_transfer(
         let transfer =
             s.db.get_transfer(&transfer_id)?
                 .ok_or(AppError::TransferNotFound)?;
-        if transfer.status != "paused" {
+        // Retrying a failed transfer is allowed: the uploader resumes from its
+        // completed chunks instead of restarting from zero.
+        if transfer.status != "paused" && transfer.status != "failed" {
             return Err(AppError::Internal(format!(
-                "Transfer is not paused (status: {})",
+                "Transfer is not paused or failed (status: {})",
                 transfer.status
             )));
         }
@@ -2436,6 +2509,7 @@ mod tests {
             ip: "192.168.1.5".to_string(),
             created_at: "0".to_string(),
             last_seen: "1".to_string(),
+            approved_until: None,
         }
     }
 

@@ -21,6 +21,10 @@ pub struct DeviceRecord {
     pub ip: String,
     pub created_at: String,
     pub last_seen: String,
+    /// Absolute unix-seconds deadline after which the approval auto-expires.
+    /// `None` keeps the current behavior (one-time access until the service
+    /// stops, or permanent when `trusted`).
+    pub approved_until: Option<String>,
 }
 
 fn device_from_row(row: &Row<'_>) -> rusqlite::Result<DeviceRecord> {
@@ -37,6 +41,7 @@ fn device_from_row(row: &Row<'_>) -> rusqlite::Result<DeviceRecord> {
         ip: row.get(9)?,
         created_at: row.get(10)?,
         last_seen: row.get(11)?,
+        approved_until: row.get(12)?,
     })
 }
 
@@ -134,6 +139,11 @@ pub struct Settings {
     pub max_file_size: i64,
     #[serde(default = "default_theme_mode")]
     pub theme_mode: String,
+    /// Default approval lifetime in hours applied when an authorization does
+    /// not specify one. `0` means one-time access (until the service stops),
+    /// `-1` means keep the device permanently trusted.
+    #[serde(default)]
+    pub authorization_expiry_hours: i64,
 }
 
 fn default_max_file_size() -> i64 {
@@ -154,6 +164,7 @@ impl Default for Settings {
             port: 53317,
             max_file_size: default_max_file_size(),
             theme_mode: default_theme_mode(),
+            authorization_expiry_hours: 0,
         }
     }
 }
@@ -355,6 +366,7 @@ impl Database {
         let columns = [
             ("devices", "client_id", "TEXT NOT NULL DEFAULT ''"),
             ("devices", "trusted", "INTEGER NOT NULL DEFAULT 0"),
+            ("devices", "approved_until", "TEXT"),
             ("transfers", "target_device_id", "TEXT"),
             ("transfers", "relay_stage", "TEXT"),
             ("transfers", "accepted_at", "TEXT"),
@@ -420,8 +432,8 @@ impl Database {
             .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
 
         conn.execute(
-            "INSERT INTO devices (id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO devices (id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 device.id,
                 device.name,
@@ -435,6 +447,7 @@ impl Database {
                 device.ip,
                 device.created_at,
                 device.last_seen,
+                device.approved_until,
             ],
         )
         .map_err(|e| AppError::Database(format!("Insert device failed: {}", e)))?;
@@ -450,7 +463,7 @@ impl Database {
 
         let result = conn
             .query_row(
-                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                  FROM devices WHERE session_token = ?1",
                 params![token],
                 device_from_row,
@@ -469,7 +482,7 @@ impl Database {
 
         let result = conn
             .query_row(
-                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                  FROM devices WHERE id = ?1",
                 params![id],
                 device_from_row,
@@ -488,7 +501,7 @@ impl Database {
 
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                  FROM devices ORDER BY last_seen DESC",
             )
             .map_err(|e| AppError::Database(format!("Prepare statement failed: {}", e)))?;
@@ -509,7 +522,7 @@ impl Database {
             .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
 
         conn.query_row(
-            "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+            "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
              FROM devices WHERE client_id = ?1 AND id <> 'desktop'",
             params![client_id],
             device_from_row,
@@ -536,7 +549,7 @@ impl Database {
 
         let device = conn
             .query_row(
-                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                  FROM devices
                  WHERE id <> 'desktop' AND client_id = '' AND name = ?1 AND platform = ?2
                    AND device_type = ?3 AND user_agent = ?4 AND ip = ?5
@@ -604,7 +617,7 @@ impl Database {
         if !candidate.client_id.is_empty() {
             existing = tx
                 .query_row(
-                    "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                    "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                      FROM devices WHERE client_id = ?1 AND id <> 'desktop'",
                     params![candidate.client_id],
                     device_from_row,
@@ -615,7 +628,7 @@ impl Database {
             if existing.is_none() {
                 existing = tx
                     .query_row(
-                        "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                        "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                          FROM devices
                          WHERE id <> 'desktop' AND client_id = '' AND name = ?1 AND platform = ?2
                            AND device_type = ?3 AND user_agent = ?4 AND ip = ?5
@@ -662,7 +675,7 @@ impl Database {
 
             let refreshed = tx
                 .query_row(
-                    "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen
+                    "SELECT id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until
                      FROM devices WHERE id = ?1",
                     params![existing.id],
                     device_from_row,
@@ -674,8 +687,8 @@ impl Database {
         }
 
         tx.execute(
-            "INSERT INTO devices (id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+            "INSERT INTO devices (id, name, platform, device_type, user_agent, client_id, session_token, approved, trusted, ip, created_at, last_seen, approved_until)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             params![
                 candidate.id,
                 candidate.name,
@@ -689,6 +702,7 @@ impl Database {
                 candidate.ip,
                 candidate.created_at,
                 candidate.last_seen,
+                candidate.approved_until,
             ],
         )
         .map_err(|e| AppError::Database(format!("Insert device failed: {}", e)))?;
@@ -787,6 +801,19 @@ impl Database {
     }
 
     pub fn set_device_access(&self, id: &str, approved: bool, trusted: bool) -> AppResult<()> {
+        self.set_device_access_with_expiry(id, approved, trusted, None)
+    }
+
+    /// Approve or revoke a device, optionally bounding the approval to an
+    /// absolute unix-seconds deadline. A revoked or expired approval clears
+    /// the deadline so a later manual approval starts from a clean slate.
+    pub fn set_device_access_with_expiry(
+        &self,
+        id: &str,
+        approved: bool,
+        trusted: bool,
+        approved_until: Option<String>,
+    ) -> AppResult<()> {
         let conn = self
             .conn
             .lock()
@@ -794,8 +821,8 @@ impl Database {
 
         let updated = conn
             .execute(
-                "UPDATE devices SET approved = ?1, trusted = ?2 WHERE id = ?3",
-                params![approved as i32, trusted as i32, id],
+                "UPDATE devices SET approved = ?1, trusted = ?2, approved_until = ?3 WHERE id = ?4",
+                params![approved as i32, trusted as i32, approved_until, id],
             )
             .map_err(|e| AppError::Database(format!("Update device failed: {}", e)))?;
 
@@ -804,6 +831,41 @@ impl Database {
         }
 
         Ok(())
+    }
+
+    /// Check whether an approval has passed its deadline. When it has, revoke
+    /// the device (approval + trust) and return `true` so the caller can
+    /// surface the change to connected clients.
+    pub fn revoke_device_if_expired(&self, device: &DeviceRecord) -> AppResult<bool> {
+        if !device.approved {
+            return Ok(false);
+        }
+        let Some(deadline) = device.approved_until.as_deref() else {
+            return Ok(false);
+        };
+        let expired = deadline
+            .parse::<i64>()
+            .ok()
+            .is_some_and(|deadline_seconds| {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(i64::MAX);
+                deadline_seconds < now
+            });
+        if expired {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+            conn.execute(
+                "UPDATE devices SET approved = 0, trusted = 0, approved_until = NULL WHERE id = ?1",
+                params![device.id],
+            )
+            .map_err(|e| AppError::Database(format!("Expire device access failed: {}", e)))?;
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     /// End every non-trusted authorization left by a previous service
@@ -1030,6 +1092,58 @@ impl Database {
         )
         .map_err(|e| AppError::Database(format!("Update transfer progress failed: {}", e)))?;
 
+        Ok(())
+    }
+
+    /// Delete transfer history rows. The received files on disk are NOT
+    /// removed – only the database history, chunk metadata, download sessions,
+    /// relay staging records and lifecycle events of the given transfers.
+    /// SQLite foreign keys are disabled by default, so every child table is
+    /// deleted explicitly inside one transaction.
+    pub fn delete_transfers(&self, ids: &[String]) -> AppResult<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| AppError::Database(format!("Lock poisoned: {}", e)))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| AppError::Database(format!("Begin transfer deletion failed: {}", e)))?;
+
+        for id in ids {
+            tx.execute(
+                "DELETE FROM chunks WHERE file_id IN (SELECT id FROM transfer_files WHERE transfer_id = ?1)",
+                params![id],
+            )
+            .map_err(|e| AppError::Database(format!("Delete transfer chunks failed: {}", e)))?;
+            tx.execute(
+                "DELETE FROM transfer_files WHERE transfer_id = ?1",
+                params![id],
+            )
+            .map_err(|e| AppError::Database(format!("Delete transfer files failed: {}", e)))?;
+            tx.execute(
+                "DELETE FROM transfer_events WHERE transfer_id = ?1",
+                params![id],
+            )
+            .map_err(|e| AppError::Database(format!("Delete transfer events failed: {}", e)))?;
+            tx.execute(
+                "DELETE FROM download_sessions WHERE transfer_id = ?1",
+                params![id],
+            )
+            .map_err(|e| AppError::Database(format!("Delete download sessions failed: {}", e)))?;
+            tx.execute(
+                "DELETE FROM relay_files WHERE transfer_id = ?1",
+                params![id],
+            )
+            .map_err(|e| AppError::Database(format!("Delete relay files failed: {}", e)))?;
+            tx.execute("DELETE FROM transfers WHERE id = ?1", params![id])
+                .map_err(|e| AppError::Database(format!("Delete transfer failed: {}", e)))?;
+        }
+
+        tx.commit()
+            .map_err(|e| AppError::Database(format!("Commit transfer deletion failed: {}", e)))?;
         Ok(())
     }
 
@@ -1874,6 +1988,7 @@ mod tests {
             ip: "192.168.1.5".to_string(),
             created_at: last_seen.to_string(),
             last_seen: last_seen.to_string(),
+            approved_until: None,
         }
     }
 

@@ -481,6 +481,9 @@ async function handleCancel() {
         <div class="upload-progress-header">
           <Loader :size="14" class="spin" />
           <span class="upload-progress-name">{{ uploadProgress.fileName }}</span>
+          <span v-if="uploadProgress.status === 'retrying'" class="retry-badge">
+            网络中断，自动重试中…
+          </span>
         </div>
         <div class="upload-progress-bar">
           <div
@@ -491,9 +494,9 @@ async function handleCancel() {
         <div class="upload-progress-meta">
           <span>{{ Math.round(uploadProgress.progress) }}%</span>
           <span>{{ formatBytes(uploadProgress.transferredBytes) }} / {{ formatBytes(uploadProgress.totalBytes) }}</span>
-          <span>{{ formatSpeed(uploadProgress.speedBytesPerSecond) }}</span>
-          <span>已用 {{ formatElapsed(uploadProgress.elapsedSeconds) }}</span>
-          <span>剩余 {{ formatRemaining(uploadProgress.remainingSeconds) }}</span>
+          <span v-if="uploadProgress.status !== 'retrying'">{{ formatSpeed(uploadProgress.speedBytesPerSecond) }}</span>
+          <span v-if="uploadProgress.status !== 'retrying'">已用 {{ formatElapsed(uploadProgress.elapsedSeconds) }}</span>
+          <span v-if="uploadProgress.status !== 'retrying'">剩余 {{ formatRemaining(uploadProgress.remainingSeconds) }}</span>
         </div>
       </div>
     </section>
@@ -866,6 +869,16 @@ async function handleCancel() {
   align-items: center;
   gap: 8px;
   margin-bottom: 10px;
+}
+
+.retry-badge {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--color-warning, #b45309);
+  background: var(--color-warning-soft, rgba(180, 83, 9, 0.12));
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
 }
 
 .upload-progress-name {

@@ -95,6 +95,13 @@ pub enum WsEvent {
         file_id: String,
         checksum: String,
     },
+    #[serde(rename = "transfer.checksum_progress")]
+    TransferChecksumProgress {
+        transfer_id: String,
+        file_id: String,
+        /// 0.0..=1.0 fraction of the file hashed so far.
+        progress: f64,
+    },
     #[serde(rename = "transfer.verifying")]
     TransferVerifying { transfer_id: String },
     #[serde(rename = "transfer.completed")]
@@ -106,6 +113,8 @@ pub enum WsEvent {
     TransferCancelled { transfer_id: String },
     #[serde(rename = "transfer.failed")]
     TransferFailed { transfer_id: String, error: String },
+    #[serde(rename = "transfer.deleted")]
+    TransferDeleted { transfer_id: String },
     // --- Bidirectional transfer events ---
     #[serde(rename = "transfer.requested")]
     TransferRequested {

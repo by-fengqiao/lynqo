@@ -93,6 +93,7 @@ struct SettingsPatch {
     port: Option<u16>,
     max_file_size: Option<i64>,
     theme_mode: Option<String>,
+    authorization_expiry_hours: Option<i64>,
 }
 
 fn timestamp_to_iso(value: &str) -> String {
@@ -862,6 +863,7 @@ pub async fn get_devices(state: State<'_, SharedState>) -> Result<String, String
                 "ip": device.ip,
                 "approved": device.approved,
                 "trusted": device.trusted,
+                "approvedUntil": device.approved_until.as_deref().map(timestamp_to_iso),
                 "online": online,
                 "lastSeenAt": timestamp_to_iso(&device.last_seen),
             })
@@ -871,13 +873,43 @@ pub async fn get_devices(state: State<'_, SharedState>) -> Result<String, String
 }
 
 #[tauri::command]
+/// Positive hours bound the approval; `0` means one-time access until the
+/// service stops; a negative value means permanent. `None` falls back to
+/// the configured default (`authorizationExpiryHours` setting).
 pub async fn approve_device(
     state: State<'_, SharedState>,
     device_id: String,
     trusted: bool,
+    expiry_hours: Option<i64>,
 ) -> Result<CommandResult, String> {
     let s = state.lock().await;
-    match s.db.set_device_access(&device_id, true, trusted) {
+    let default_hours =
+        s.db.get_settings()
+            .map(|settings| settings.authorization_expiry_hours)
+            .unwrap_or(0);
+
+    // Trusted devices are permanent by definition. Everything else follows
+    // the requested (or default) expiry policy.
+    let (effective_trusted, approved_until) = if trusted {
+        (true, None)
+    } else {
+        let hours = expiry_hours.unwrap_or(default_hours);
+        if hours < 0 {
+            // Permanent authorization without the "trusted device" label.
+            (true, None)
+        } else if hours == 0 {
+            // One-time access: valid for this service lifetime only.
+            (false, None)
+        } else {
+            let now = chrono::Utc::now().timestamp();
+            (false, Some((now + hours * 3600).to_string()))
+        }
+    };
+
+    match s
+        .db
+        .set_device_access_with_expiry(&device_id, true, effective_trusted, approved_until)
+    {
         Ok(()) => {
             let _ = s.event_tx.send(crate::server::WsEvent::DeviceApproved {
                 device_id: device_id.clone(),
@@ -1022,6 +1054,35 @@ pub async fn get_transfers(state: State<'_, SharedState>) -> Result<String, Stri
     serde_json::to_string(&transfer_list).map_err(|e| e.to_string())
 }
 
+/// Delete transfer history records (and their child metadata) for the given
+/// ids. Received files on disk are intentionally kept; only the transfer
+/// history entry is removed.
+#[tauri::command]
+pub async fn delete_transfers(
+    state: State<'_, SharedState>,
+    transfer_ids: Vec<String>,
+) -> Result<CommandResult, String> {
+    let s = state.lock().await;
+    match s.db.delete_transfers(&transfer_ids) {
+        Ok(()) => {
+            for transfer_id in &transfer_ids {
+                let _ = s.event_tx.send(crate::server::WsEvent::TransferDeleted {
+                    transfer_id: transfer_id.clone(),
+                });
+            }
+            tracing::info!("Deleted {} transfer history records", transfer_ids.len());
+            Ok(CommandResult {
+                success: true,
+                error: None,
+            })
+        }
+        Err(e) => Ok(CommandResult {
+            success: false,
+            error: Some(e.to_string()),
+        }),
+    }
+}
+
 #[tauri::command]
 pub async fn cancel_transfer(
     state: State<'_, SharedState>,
@@ -1128,6 +1189,9 @@ pub async fn update_settings(
             return Err("themeMode must be light, dark, or system".to_string());
         }
         settings.theme_mode = value;
+    }
+    if let Some(value) = patch.authorization_expiry_hours {
+        settings.authorization_expiry_hours = value;
     }
     std::fs::create_dir_all(&settings.receive_folder)
         .map_err(|e| format!("Unable to create receive folder: {}", e))?;

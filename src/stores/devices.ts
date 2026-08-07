@@ -120,10 +120,14 @@ export const useDevicesStore = defineStore("devices", () => {
   /**
    * Approve a device via the Tauri backend.
    */
-  async function approveDevice(id: string, trusted = false): Promise<boolean> {
+  async function approveDevice(
+    id: string,
+    trusted = false,
+    expiryHours?: number
+  ): Promise<boolean> {
     if (isTauri()) {
       try {
-        const result = await tauriApproveDevice(id, trusted);
+        const result = await tauriApproveDevice(id, trusted, expiryHours);
         if (!result.success) {
           console.error("[devices] Failed to approve device:", result.error);
           return false;

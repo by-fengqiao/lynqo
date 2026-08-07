@@ -73,7 +73,27 @@ pub async fn ws_handler(
             None
         } else {
             match s.db.get_device_by_session_token(&token) {
-                Ok(Some(device)) => Some(device),
+                Ok(Some(device)) => {
+                    // An expired approval must not keep its WebSocket alive.
+                    // Revoke it and reject the connection so the phone is
+                    // forced through the approval flow again.
+                    match s.db.revoke_device_if_expired(&device) {
+                        Ok(true) => {
+                            tracing::info!("WebSocket connection rejected: approval expired");
+                            return (axum::http::StatusCode::UNAUTHORIZED, "Invalid token")
+                                .into_response();
+                        }
+                        Ok(false) => Some(device),
+                        Err(error) => {
+                            tracing::error!("Failed to check device approval expiry: {}", error);
+                            return (
+                                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                                "Internal error",
+                            )
+                                .into_response();
+                        }
+                    }
+                }
                 _ => {
                     tracing::error!("WebSocket connection rejected: invalid token");
                     return (axum::http::StatusCode::UNAUTHORIZED, "Invalid token").into_response();
@@ -228,6 +248,7 @@ mod tests {
             ip: "192.168.1.5".to_string(),
             created_at: "0".to_string(),
             last_seen: "0".to_string(),
+            approved_until: None,
         }
     }
 

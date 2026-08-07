@@ -9,16 +9,18 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  allow: [deviceId: string, trusted: boolean];
+  allow: [deviceId: string, trusted: boolean, expiryHours?: number];
   reject: [deviceId: string];
 }>();
 
 const trustDevice = ref(false);
+const expiryHours = ref<number | undefined>(undefined);
 
 watch(
   () => props.device?.id,
   () => {
     trustDevice.value = false;
+    expiryHours.value = undefined;
   }
 );
 
@@ -34,8 +36,15 @@ const platformLabel = computed(() => {
   return labels[platform ?? ""] ?? "未知平台";
 });
 
+const expiryOptions = [
+  { value: undefined, label: "直到服务关闭" },
+  { value: 1, label: "1 小时" },
+  { value: 24, label: "24 小时" },
+  { value: 24 * 7, label: "7 天" },
+];
+
 function allow() {
-  if (props.device) emit("allow", props.device.id, trustDevice.value);
+  if (props.device) emit("allow", props.device.id, trustDevice.value, expiryHours.value);
 }
 
 function reject() {
@@ -80,8 +89,28 @@ function reject() {
           </span>
         </label>
 
+        <div v-if="!trustDevice" class="expiry-option">
+          <span class="trust-option__title">授权时长</span>
+          <div class="expiry-options">
+            <button
+              v-for="option in expiryOptions"
+              :key="String(option.value)"
+              type="button"
+              class="expiry-chip"
+              :class="{ 'expiry-chip--active': expiryHours === option.value }"
+              :disabled="pending"
+              @click="expiryHours = option.value"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+          <span class="trust-option__hint">
+            时长结束后，该设备需要重新获得批准；"直到服务关闭"在应用退出后失效。
+          </span>
+        </div>
+
         <p class="access-request__notice">
-          未勾选时仅允许本次连接；设备关闭页面或断开后，将再次请求确认。
+          未勾选"信任此设备"时，授权在所选时长后过期；设备断开后，将再次请求确认。
         </p>
 
         <div class="access-request__actions">
@@ -217,6 +246,48 @@ h2 {
   color: var(--color-text-secondary);
   font-size: var(--text-xs);
   line-height: 1.5;
+}
+
+.expiry-option {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--color-surface-inset);
+  border-radius: var(--radius-md);
+}
+
+.expiry-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 6px;
+}
+
+.expiry-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-card);
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.expiry-chip:hover {
+  border-color: var(--color-brand-primary);
+  color: var(--color-text-brand);
+}
+
+.expiry-chip--active {
+  border-color: var(--color-brand-primary);
+  background: var(--color-brand-primary-soft);
+  color: var(--color-text-brand);
+}
+
+.expiry-chip:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .trust-option__hint {

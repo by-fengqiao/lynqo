@@ -8,6 +8,7 @@ import {
   sendFilesToDevice,
   pauseTransferCmd,
   resumeTransferCmd,
+  deleteTransfers as tauriDeleteTransfers,
 } from "@/services/tauri";
 import type { SendTransferResult } from "@/services/tauri";
 import { wsClient } from "@/services/websocket";
@@ -285,7 +286,24 @@ export const useTransfersStore = defineStore("transfers", () => {
         status: "verifying",
         speedBytesPerSecond: 0,
         remainingSeconds: 0,
+        checksumProgress: 0,
       });
+    });
+
+    wsClient.on("transfer.checksum_progress", (msg) => {
+      const data = msg.payload as {
+        transferId: string;
+        fileId: string;
+        progress: number;
+      };
+      const task = transfers.value.find((transfer) => transfer.id === data.transferId);
+      if (!task) {
+        queueTransferRefresh();
+        return;
+      }
+      const progress = Math.min(1, Math.max(0, data.progress ?? 0));
+      task.checksumProgress = progress;
+      liveUpdateVersions.set(data.transferId, ++liveUpdateSequence);
     });
 
     wsClient.on("transfer.checksum_ready", (msg) => {
@@ -404,6 +422,35 @@ export const useTransfersStore = defineStore("transfers", () => {
       applyLiveUpdate(data.transferId, { status: "expired", speedBytesPerSecond: 0 });
       queueTransferRefresh();
     });
+
+    wsClient.on("transfer.deleted", (msg) => {
+      const data = msg.payload as { transferId: string };
+      transfers.value = transfers.value.filter((t) => t.id !== data.transferId);
+    });
+  }
+
+  /**
+   * Delete transfer history records. Received files on disk are kept.
+   * Optimistically removes the tasks locally, then lets the backend confirm.
+   */
+  async function removeTransfers(ids: string[]) {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    transfers.value = transfers.value.filter((t) => !idSet.has(t.id));
+    if (isTauri()) {
+      try {
+        const result = await tauriDeleteTransfers(ids);
+        if (!result.success) {
+          console.error("[transfers] Failed to delete transfers:", result.error);
+          queueTransferRefresh();
+        }
+      } catch (err) {
+        console.error("[transfers] Failed to delete transfers:", err);
+        queueTransferRefresh();
+      }
+    } else {
+      // Web demo: just drop the records locally.
+    }
   }
 
   return {
@@ -420,6 +467,7 @@ export const useTransfersStore = defineStore("transfers", () => {
     pauseTransfer,
     resumeTransfer,
     retryTransfer,
+    removeTransfers,
     sendFiles,
     addPendingFiles,
     removePendingFile,

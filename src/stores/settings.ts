@@ -23,6 +23,8 @@ export const useSettingsStore = defineStore("settings", () => {
   const requireApproval = ref<boolean>(true);
   // Zero means no client-side limit until the persisted backend setting is loaded.
   const maxFileSize = ref<number>(0);
+  // Default approval duration for new devices (0 = session-only, positive = hours).
+  const authorizationExpiryHours = ref<number>(0);
   const autostartEnabled = ref(false);
   const closeBehavior = ref<CloseBehavior>("minimize");
 
@@ -113,6 +115,11 @@ export const useSettingsStore = defineStore("settings", () => {
     void saveSettings();
   }
 
+  function setAuthorizationExpiryHours(hours: number) {
+    authorizationExpiryHours.value = hours;
+    void saveSettings();
+  }
+
   async function setAutostart(value: boolean) {
     if (!isTauri()) {
       autostartEnabled.value = value;
@@ -149,6 +156,9 @@ export const useSettingsStore = defineStore("settings", () => {
         if (settings.maxFileSize !== undefined) {
           maxFileSize.value = settings.maxFileSize as number;
         }
+        if (settings.authorizationExpiryHours !== undefined) {
+          authorizationExpiryHours.value = settings.authorizationExpiryHours as number;
+        }
         if (settings.themeMode) {
           themeMode.value = settings.themeMode as ThemeMode;
           persistedThemeMode = settings.themeMode as ThemeMode;
@@ -176,6 +186,7 @@ export const useSettingsStore = defineStore("settings", () => {
           receiveFolder: receiveFolder.value,
           requireApproval: requireApproval.value,
           maxFileSize: maxFileSize.value,
+          authorizationExpiryHours: authorizationExpiryHours.value,
           themeMode: themeMode.value,
         });
         if (!result.success) throw new Error(result.error ?? "保存设置失败");
@@ -209,6 +220,7 @@ export const useSettingsStore = defineStore("settings", () => {
     receiveFolder,
     requireApproval,
     maxFileSize,
+    authorizationExpiryHours,
     autostartEnabled,
     closeBehavior,
     // Theme actions (unchanged)
@@ -221,6 +233,7 @@ export const useSettingsStore = defineStore("settings", () => {
     setReceiveFolder,
     setRequireApproval,
     setMaxFileSize,
+    setAuthorizationExpiryHours,
     setAutostart,
     setCloseBehavior,
     // Tauri-backed actions

@@ -202,7 +202,19 @@ pub async fn send_files_to_device(
     drop(s);
     tokio::spawn(async move {
         for (file_id, path) in checksum_jobs {
-            match crate::transfer::compute_sha256(std::path::Path::new(&path)).await {
+            match crate::transfer::compute_sha256_with_progress(
+                std::path::Path::new(&path),
+                |progress| {
+                    let _ =
+                        checksum_events.send(crate::server::WsEvent::TransferChecksumProgress {
+                            transfer_id: checksum_transfer_id.clone(),
+                            file_id: file_id.clone(),
+                            progress,
+                        });
+                },
+            )
+            .await
+            {
                 Ok(checksum) => {
                     if let Err(error) =
                         checksum_db.update_transfer_file_checksum(&file_id, &checksum)
@@ -333,11 +345,14 @@ pub async fn resume_transfer(
             .map_err(|e| e.to_string())?
             .ok_or_else(|| format!("Transfer '{}' not found", transfer_id))?;
 
-    if transfer.status != "paused" {
+    // Retrying a failed transfer is allowed: the phone side resumes from its
+    // completed chunks, so a verification failure or a dropped connection
+    // never forces the user to restart from zero.
+    if transfer.status != "paused" && transfer.status != "failed" {
         return Ok(CommandResult {
             success: false,
             error: Some(format!(
-                "Transfer is not paused (status: {})",
+                "Transfer is not paused or failed (status: {})",
                 transfer.status
             )),
         });

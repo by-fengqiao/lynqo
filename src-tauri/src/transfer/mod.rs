@@ -87,11 +87,27 @@ pub fn unique_filename(dir: &Path, name: &str) -> PathBuf {
     dir.join(format!("{} ({}){}", stem, timestamp, ext))
 }
 
-/// Compute SHA-256 of a file by streaming (8KB buffer).
+/// Compute SHA-256 of a file by streaming (256KB buffer, no progress).
 pub async fn compute_sha256(path: &Path) -> Result<String, std::io::Error> {
+    compute_sha256_with_progress(path, |_| {}).await
+}
+
+/// Compute SHA-256 of a file while reporting progress (0.0..=1.0).
+///
+/// The callback fires at least once per 4 MiB of input (plus the final
+/// partial block), so large files show a live verification bar instead of an
+/// indefinite "verifying" state. Progress reporting must never fail the hash:
+/// callback errors are ignored.
+pub async fn compute_sha256_with_progress(
+    path: &Path,
+    mut on_progress: impl FnMut(f64),
+) -> Result<String, std::io::Error> {
     let mut file = tokio::fs::File::open(path).await?;
+    let total = file.metadata().await?.len();
     let mut hasher = Sha256::new();
-    let mut buffer = vec![0u8; 8192];
+    let mut buffer = vec![0u8; 256 * 1024];
+    let mut read_bytes: u64 = 0;
+    let mut last_report: u64 = 0;
 
     loop {
         let bytes_read = file.read(&mut buffer).await?;
@@ -99,6 +115,15 @@ pub async fn compute_sha256(path: &Path) -> Result<String, std::io::Error> {
             break;
         }
         hasher.update(&buffer[..bytes_read]);
+        read_bytes += bytes_read as u64;
+        if read_bytes - last_report >= 4 * 1024 * 1024 || read_bytes == total {
+            on_progress(if total > 0 {
+                read_bytes as f64 / total as f64
+            } else {
+                1.0
+            });
+            last_report = read_bytes;
+        }
     }
 
     let result = hasher.finalize();

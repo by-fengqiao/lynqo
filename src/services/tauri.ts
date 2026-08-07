@@ -140,8 +140,12 @@ export async function getDevices(): Promise<unknown[]> {
   return JSON.parse(json);
 }
 
-export async function approveDevice(deviceId: string, trusted: boolean): Promise<CommandResult> {
-  return invoke("approve_device", { deviceId, trusted });
+export async function approveDevice(
+  deviceId: string,
+  trusted: boolean,
+  expiryHours?: number
+): Promise<CommandResult> {
+  return invoke("approve_device", { deviceId, trusted, expiryHours: expiryHours ?? null });
 }
 
 export async function rejectDevice(deviceId: string): Promise<CommandResult> {
@@ -150,6 +154,11 @@ export async function rejectDevice(deviceId: string): Promise<CommandResult> {
 
 export async function forgetDevice(deviceId: string): Promise<CommandResult> {
   return invoke("forget_device", { deviceId });
+}
+
+/** Delete transfer history records; received files on disk are kept. */
+export async function deleteTransfers(transferIds: string[]): Promise<CommandResult> {
+  return invoke("delete_transfers", { transferIds });
 }
 
 export async function getTransfers(): Promise<unknown[]> {

@@ -32,6 +32,17 @@ function toggleApproval() {
   settingsStore.setRequireApproval(!settingsStore.requireApproval);
 }
 
+function setAuthorizationExpiryHours(hours: number) {
+  settingsStore.setAuthorizationExpiryHours(hours);
+}
+
+const authorizationOptions = [
+  { value: 0, labelKey: "settings.authorizationSession" },
+  { value: 1, labelKey: "settings.authorizationHour" },
+  { value: 24, labelKey: "settings.authorizationDay" },
+  { value: 24 * 7, labelKey: "settings.authorizationWeek" },
+] as const;
+
 const closeOptions = computed<{ value: CloseBehavior; label: string }[]>(() => [
   { value: "minimize", label: t("settings.closeMinimize") },
   { value: "quit", label: t("settings.closeQuit") },
@@ -161,6 +172,23 @@ async function changeFolder() {
           >
             <span class="toggle-knob"></span>
           </button>
+        </div>
+        <div class="toggle-row">
+          <div class="toggle-info">
+            <span class="toggle-label">{{ t("settings.authorizationExpiry") }}</span>
+            <span class="toggle-desc">{{ t("settings.authorizationExpiryDescription") }}</span>
+          </div>
+          <div class="expiry-picker">
+            <button
+              v-for="option in authorizationOptions"
+              :key="String(option.value)"
+              class="expiry-chip"
+              :class="{ 'expiry-chip--active': settingsStore.authorizationExpiryHours === option.value }"
+              @click="setAuthorizationExpiryHours(option.value)"
+            >
+              {{ t(option.labelKey) }}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -388,6 +416,37 @@ async function changeFolder() {
 .toggle-desc {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+}
+
+.expiry-picker {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 320px;
+}
+
+.expiry-chip {
+  padding: 5px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.expiry-chip:hover {
+  border-color: var(--color-brand-primary);
+  color: var(--color-text-brand);
+}
+
+.expiry-chip--active {
+  border-color: var(--color-brand-primary);
+  background: var(--color-brand-primary-soft);
+  color: var(--color-text-brand);
 }
 
 .toggle-switch {

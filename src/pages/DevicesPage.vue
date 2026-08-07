@@ -34,6 +34,19 @@ async function approve(deviceId: string, trusted: boolean) {
   await devicesStore.fetchDevices();
 }
 
+function formatApprovalExpiry(value: string): string {
+  const parsed = Date.parse(value);
+  if (Number.isNaN(parsed)) return value;
+  const date = new Date(parsed);
+  const diffMs = date.getTime() - Date.now();
+  if (diffMs <= 0) return t("devices.expiresSoon");
+  const days = Math.floor(diffMs / 86_400_000);
+  if (days > 0) return t("devices.expiresInDays", { count: days });
+  const hours = Math.ceil(diffMs / 3_600_000);
+  if (hours > 0) return t("devices.expiresInHours", { count: hours });
+  return date.toLocaleString();
+}
+
 async function reject(deviceId: string) {
   pendingDeviceId.value = deviceId;
   actionError.value = null;
@@ -133,6 +146,10 @@ function getPlatformLabel(platform: string): string {
                 <ShieldOff :size="13" /> {{ t("devices.pendingApproval") }}
               </span>
             </span>
+          </div>
+          <div v-if="device.approved && !device.trusted && device.approvedUntil" class="meta-row">
+            <span class="meta-label">{{ t("devices.expires") }}</span>
+            <span class="meta-value">{{ formatApprovalExpiry(device.approvedUntil) }}</span>
           </div>
         </div>
         <DeviceAuthorizationActions

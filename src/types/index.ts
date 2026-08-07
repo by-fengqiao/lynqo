@@ -12,6 +12,8 @@ export interface Device {
   approved: boolean;
   /** Explicitly persisted by the desktop user. Trusted devices auto-approve on reconnect. */
   trusted: boolean;
+  /** ISO timestamp after which a non-trusted approval expires (undefined = one-time/session). */
+  approvedUntil?: string;
   lastSeenAt: string;
 }
 
@@ -72,6 +74,8 @@ export interface TransferTask {
   startedAt?: string;
   retryCount?: number;
   protocol?: string;
+  /** 0..1 fraction of the SHA-256 verification completed. */
+  checksumProgress?: number;
 }
 
 export type ThemeMode = "light" | "dark" | "system";
